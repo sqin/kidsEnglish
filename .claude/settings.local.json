@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(psql:*)",
+      "Bash(redis-cli:*)",
+      "Bash(node:*)",
+      "Bash(npm --version)",
+      "Bash(brew:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm create vite@latest . --:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(lsof:*)",
+      "Bash(uv init:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv run python:*)",
+      "Bash(chmod:*)",
+      "Bash(./create_db.sh:*)",
+      "Bash(curl:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

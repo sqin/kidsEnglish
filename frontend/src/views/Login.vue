@@ -24,7 +24,7 @@
         <div class="input-group">
           <label>昵称</label>
           <input
-            v-model="nickname"
+            v-model.trim="nickname"
             type="text"
             placeholder="给自己起个名字"
             required
@@ -34,7 +34,7 @@
         <div class="input-group">
           <label>密码</label>
           <input
-            v-model="password"
+            v-model.trim="password"
             type="password"
             placeholder="设置一个密码"
             required

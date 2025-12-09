@@ -83,8 +83,17 @@ async def login(
     db: AsyncSession = Depends(get_db)
 ):
     """用户登录"""
+    print(f"Login attempt: username={form_data.username}, password={form_data.password}")
     result = await db.execute(select(User).where(User.nickname == form_data.username))
     user = result.scalar_one_or_none()
+    
+    if user:
+        print(f"User found: {user.nickname}, checking password...")
+        is_password_valid = verify_password(form_data.password, user.hashed_password)
+        print(f"Password valid: {is_password_valid}")
+    else:
+        print(f"User not found: {form_data.username}")
+
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

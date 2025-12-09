@@ -28,10 +28,17 @@ http.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
-      // token过期或无效，清除本地存储并跳转到登录页
+      // 如果是登录接口本身的401，不进行跳转，直接返回错误给页面处理
+      if (error.config.url.includes('/auth/login')) {
+        return Promise.reject(error)
+      }
+      
+      // 其他接口的401才认为是token过期
       localStorage.removeItem('token')
       localStorage.removeItem('user')
-      window.location.href = '/login'
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>浏览器录音功能诊断</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .card {
+      background: white;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    .check {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+    }
+    .pass {
+      background: #d4edda;
+      color: #155724;
+    }
+    .fail {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .warn {
+      background: #fff3cd;
+      color: #856404;
+    }
+    .icon {
+      font-size: 24px;
+      margin-right: 10px;
+    }
+    code {
+      background: #f8f9fa;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    .button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    .button:hover {
+      background: #0056b3;
+    }
+    .button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #results {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 5px;
+      margin-top: 15px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 浏览器录音功能诊断</h1>
+
+  <div class="card">
+    <h2>基础支持检查</h2>
+    <div id="basic-checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>API 可用性</h2>
+    <div id="api-checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>设备检测</h2>
+    <div id="device-checks"></div>
+  </div>
+
+  <div class="card">
+    <h2>实际测试</h2>
+    <p>点击按钮测试录音功能：</p>
+    <button class="button" id="test-btn">测试录音</button>
+    <div id="test-results"></div>
+  </div>
+
+  <div class="card">
+    <h2>详细日志</h2>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    const results = document.getElementById('results');
+
+    function log(message) {
+      const time = new Date().toLocaleTimeString();
+      results.textContent += `[${time}] ${message}\n`;
+      results.scrollTop = results.scrollHeight;
+    }
+
+    function addCheck(container, title, passed, message, type = 'pass') {
+      const div = document.createElement('div');
+      div.className = `check ${type}`;
+      div.innerHTML = `
+        <span class="icon">${type === 'pass' ? '✅' : type === 'warn' ? '⚠️' : '❌'}</span>
+        <div>
+          <strong>${title}</strong><br>
+          <small>${message}</small>
+        </div>
+      `;
+      document.getElementById(container).appendChild(div);
+    }
+
+    // 基础检查
+    const basicChecks = [
+      {
+        name: 'navigator 对象',
+        check: () => typeof navigator !== 'undefined',
+        message: () => typeof navigator !== 'undefined' ? '存在' : '不存在'
+      },
+      {
+        name: 'HTTPS 连接',
+        check: () => location.protocol === 'https:' || location.hostname === 'localhost',
+        message: () => location.protocol === 'https:' || location.hostname === 'localhost'
+          ? `是 (${location.protocol})`
+          : `否 (${location.protocol} - 需要HTTPS或localhost)`
+      },
+      {
+        name: '用户交互',
+        check: () => true,
+        message: () => '是'
+      }
+    ];
+
+    basicChecks.forEach(check => {
+      const passed = check.check();
+      addCheck('basic-checks', check.name, passed, check.message(), passed ? 'pass' : 'fail');
+      log(`基础检查 - ${check.name}: ${check.message()}`);
+    });
+
+    // API 检查
+    const apiChecks = [
+      {
+        name: 'navigator.mediaDevices',
+        check: () => navigator.mediaDevices !== undefined,
+        message: () => navigator.mediaDevices !== undefined
+          ? '可用'
+          : '不可用'
+      },
+      {
+        name: 'navigator.mediaDevices.getUserMedia',
+        check: () => navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function',
+        message: () => navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function'
+          ? '可用'
+          : '不可用'
+      },
+      {
+        name: 'navigator.getUserMedia (旧版)',
+        check: () => typeof navigator.getUserMedia === 'function',
+        message: () => typeof navigator.getUserMedia === 'function'
+          ? '可用'
+          : '不可用'
+      },
+      {
+        name: 'MediaRecorder',
+        check: () => typeof MediaRecorder !== 'undefined',
+        message: () => typeof MediaRecorder !== 'undefined'
+          ? '可用'
+          : '不可用'
+      },
+      {
+        name: 'MediaRecorder.isTypeSupported',
+        check: () => MediaRecorder.isTypeSupported !== undefined,
+        message: () => MediaRecorder.isTypeSupported !== undefined
+          ? '可用'
+          : '不可用'
+      }
+    ];
+
+    apiChecks.forEach(check => {
+      const passed = check.check();
+      const type = passed ? 'pass' : 'fail';
+      const message = check.message();
+      addCheck('api-checks', check.name, passed, message, type);
+      log(`API 检查 - ${check.name}: ${message}`);
+    });
+
+    // 设备检查
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices()
+        .then(devices => {
+          const audioDevices = devices.filter(d => d.kind === 'audioinput');
+          const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+          addCheck('device-checks', '音频输入设备', audioDevices.length > 0,
+            `${audioDevices.length} 个设备`, audioDevices.length > 0 ? 'pass' : 'warn');
+          addCheck('device-checks', '视频输入设备', videoDevices.length > 0,
+            `${videoDevices.length} 个设备`, videoDevices.length > 0 ? 'pass' : 'warn');
+
+          log(`设备检测 - 音频输入: ${audioDevices.length} 个`);
+          log(`设备检测 - 视频输入: ${videoDevices.length} 个`);
+
+          audioDevices.forEach((device, index) => {
+            log(`  音频设备 ${index + 1}: ${device.label || '未知'}`);
+          });
+        })
+        .catch(err => {
+          addCheck('device-checks', '设备枚举', false, `失败: ${err.message}`, 'fail');
+          log(`设备检测失败: ${err.message}`);
+        });
+    } else {
+      addCheck('device-checks', '设备枚举', false, '不支持', 'fail');
+      log('设备检测不支持');
+    }
+
+    // 测试录音
+    document.getElementById('test-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('test-btn');
+      const testResults = document.getElementById('test-results');
+      testResults.innerHTML = '<p>正在测试...</p>';
+      log('开始录音测试');
+
+      try {
+        // 检查 API 可用性
+        if (!navigator.mediaDevices && !navigator.getUserMedia) {
+          throw new Error('浏览器不支持录音 API');
+        }
+
+        // 尝试获取权限
+        log('请求麦克风权限...');
+        const constraints = {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        };
+
+        let stream;
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } else {
+          stream = await new Promise((resolve, reject) => {
+            navigator.getUserMedia(constraints, resolve, reject);
+          });
+        }
+
+        log('✅ 成功获取音频流');
+
+        // 检查 MediaRecorder
+        if (!MediaRecorder) {
+          log('⚠️ MediaRecorder 不可用，但可以获取音频流');
+          testResults.innerHTML = '<p style="color: green;">✅ 部分成功：可以获取音频流，但无法录制</p>';
+        } else {
+          // 测试 MediaRecorder
+          let mimeType = 'audio/webm;codecs=opus';
+          if (!MediaRecorder.isTypeSupported(mimeType)) {
+            if (MediaRecorder.isTypeSupported('audio/webm')) {
+              mimeType = 'audio/webm';
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+              mimeType = 'audio/mp4';
+            } else {
+              mimeType = '';
+            }
+          }
+
+          log(`使用音频格式: ${mimeType || '自动'}`);
+
+          const mediaRecorder = new MediaRecorder(stream, {
+            mimeType: mimeType || undefined
+          });
+
+          const audioChunks = [];
+          mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) {
+              audioChunks.push(event.data);
+            }
+          };
+
+          mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+            log(`✅ 录制成功！音频大小: ${(audioBlob.size / 1024).toFixed(2)} KB`);
+            testResults.innerHTML = `
+              <p style="color: green;">✅ 测试成功！</p>
+              <p>音频格式: ${mediaRecorder.mimeType || '自动'}</p>
+              <p>文件大小: ${(audioBlob.size / 1024).toFixed(2)} KB</p>
+            `;
+
+            // 清理
+            stream.getTracks().forEach(track => track.stop());
+            btn.disabled = false;
+            btn.textContent = '测试录音';
+          };
+
+          mediaRecorder.start();
+          log('开始录制...');
+
+          setTimeout(() => {
+            mediaRecorder.stop();
+          }, 1000);
+        }
+
+      } catch (err) {
+        log(`❌ 测试失败: ${err.name} - ${err.message}`);
+        testResults.innerHTML = `<p style="color: red;">❌ 测试失败: ${err.message}</p>`;
+        btn.disabled = false;
+        btn.textContent = '测试录音';
+      }
+    });
+
+    log('诊断完成');
+  </script>
+</body>
+</html>

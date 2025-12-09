@@ -11,8 +11,28 @@
       <span class="word">{{ currentLetter.word }}</span>
     </div>
 
+    <!-- 浏览器不支持提示 -->
+    <div class="permission-prompt" v-if="browserNotSupported && !loading">
+      <div class="prompt-content">
+        <span class="prompt-icon">🌐</span>
+        <h3>浏览器不支持</h3>
+        <p>您的浏览器不支持录音功能</p>
+        <p class="browser-list">
+          请使用以下浏览器：
+          <br>
+          • Chrome 14+<br>
+          • Firefox 29+<br>
+          • Safari 14.1+<br>
+          • Edge 79+
+        </p>
+        <p class="help-text">
+          建议使用最新版本的浏览器
+        </p>
+      </div>
+    </div>
+
     <!-- 权限被拒绝提示 -->
-    <div class="permission-prompt" v-if="permissionDenied && !loading">
+    <div class="permission-prompt" v-else-if="permissionDenied && !loading">
       <div class="prompt-content">
         <span class="prompt-icon">🔒</span>
         <h3>需要麦克风权限</h3>
@@ -27,7 +47,7 @@
     </div>
 
     <!-- 录音区域 -->
-    <div class="record-area" v-else>
+    <div class="record-area" v-else-if="!browserNotSupported">
       <button
         class="record-button"
         :class="{ recording: isRecording, scored: hasScore, loading: loading }"
@@ -107,6 +127,7 @@ const loading = ref(false)
 const hasPermission = ref(false)
 const permissionDenied = ref(false)
 const permissionRequested = ref(false)
+const browserNotSupported = ref(false)
 
 let mediaRecorder = null
 let audioChunks = []
@@ -125,12 +146,54 @@ const scoreText = computed(() => {
   return '再试一次吧！🔄'
 })
 
+// 检查浏览器支持
+const checkBrowserSupport = () => {
+  browserNotSupported.value = !navigator || (!navigator.mediaDevices && !navigator.getUserMedia)
+}
+
 // 检查麦克风权限
 const checkMicrophonePermission = async () => {
   try {
-    // 检查浏览器是否支持
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('您的浏览器不支持录音功能')
+    // 检查 navigator.mediaDevices
+    if (!navigator.mediaDevices) {
+      console.warn('navigator.mediaDevices 不存在，尝试旧版API')
+      // 尝试使用旧版 API
+      if (navigator.getUserMedia) {
+        try {
+          const stream = await new Promise((resolve, reject) => {
+            navigator.getUserMedia(
+              { audio: true },
+              (stream) => {
+                // 旧版API回调风格，立即停止
+                stream.getTracks().forEach(track => track.stop())
+                resolve(stream)
+              },
+              (error) => reject(error)
+            )
+          })
+          hasPermission.value = true
+          permissionDenied.value = false
+          return true
+        } catch (err) {
+          if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+            permissionDenied.value = true
+          }
+          hasPermission.value = false
+          return false
+        }
+      } else {
+        // 真的没有录音API
+        console.error('浏览器不支持录音功能')
+        hasPermission.value = false
+        return false
+      }
+    }
+
+    // 检查 getUserMedia 方法
+    if (typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      console.error('getUserMedia 方法不可用')
+      hasPermission.value = false
+      return false
     }
 
     // 检查权限状态
@@ -138,17 +201,27 @@ const checkMicrophonePermission = async () => {
     const audioDevices = devices.filter(device => device.kind === 'audioinput')
 
     if (audioDevices.length === 0) {
-      throw new Error('未检测到麦克风设备')
+      console.warn('未检测到麦克风设备，但可能存在权限问题')
+      // 不抛出错误，继续尝试获取权限
     }
 
     // 尝试获取权限但不录音
-    const stream = await navigator.mediaDevices.getUserMedia({
+    const constraints = {
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
       }
-    })
+    }
+
+    // 尝试获取流
+    let stream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints)
+    } catch (getUserMediaErr) {
+      console.error('getUserMedia 失败:', getUserMediaErr)
+      throw getUserMediaErr
+    }
 
     // 立即停止流，只为验证权限
     stream.getTracks().forEach(track => track.stop())
@@ -160,9 +233,16 @@ const checkMicrophonePermission = async () => {
     console.error('麦克风权限检查失败:', err)
     hasPermission.value = false
 
+    // 只处理权限相关错误，不设置 browserNotSupported
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
       permissionDenied.value = true
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      // 设备未找到，不设置 permissionDenied
+      permissionDenied.value = false
+    } else if (err.name === 'NotSupportedError') {
+      permissionDenied.value = false
     }
+    // 注意：不要在 catch 中设置 browserNotSupported，它应该在 checkBrowserSupport 中设置
     return false
   }
 }
@@ -175,6 +255,12 @@ const requestMicrophonePermission = async () => {
 
 // 开始录音
 const startRecording = async () => {
+  // 检查浏览器支持
+  if (browserNotSupported.value) {
+    alert('您的浏览器不支持录音功能')
+    return
+  }
+
   // 如果还没有权限，先请求权限
   if (!hasPermission.value && !permissionRequested.value) {
     const granted = await requestMicrophonePermission()
@@ -190,19 +276,80 @@ const startRecording = async () => {
   }
 
   try {
-    // 获取音频流
-    mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true
+    // 增强的浏览器检查
+    if (!navigator) {
+      browserNotSupported.value = true
+      console.error('浏览器不支持录音功能')
+      return
+    }
+
+    let stream
+
+    // 尝试使用现代API
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
+        })
+      } catch (err) {
+        // 如果现代API失败，尝试旧版API
+        if (navigator.getUserMedia) {
+          console.log('尝试使用旧版 getUserMedia API')
+          stream = await new Promise((resolve, reject) => {
+            navigator.getUserMedia(
+              { audio: true },
+              (stream) => resolve(stream),
+              (error) => reject(error)
+            )
+          })
+        } else {
+          throw err
+        }
       }
-    })
+    } else if (navigator.getUserMedia) {
+      // 使用旧版API
+      console.log('使用旧版 getUserMedia API')
+      stream = await new Promise((resolve, reject) => {
+        navigator.getUserMedia(
+          { audio: true },
+          (stream) => resolve(stream),
+          (error) => reject(error)
+        )
+      })
+    } else {
+      console.error('您的浏览器不支持录音功能')
+      return
+    }
+
+    mediaStream = stream
+
+    // 检查 MediaRecorder 支持
+    let mimeType = 'audio/webm;codecs=opus'
+    if (!MediaRecorder.isTypeSupported(mimeType)) {
+      // 降级到其他格式
+      if (MediaRecorder.isTypeSupported('audio/webm')) {
+        mimeType = 'audio/webm'
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4'
+      } else {
+        mimeType = '' // 让浏览器自动选择
+      }
+    }
 
     // 创建 MediaRecorder
-    mediaRecorder = new MediaRecorder(mediaStream, {
-      mimeType: 'audio/webm;codecs=opus'
-    })
+    try {
+      mediaRecorder = new MediaRecorder(mediaStream, {
+        mimeType: mimeType || undefined
+      })
+    } catch (recorderErr) {
+      console.error('MediaRecorder 创建失败，尝试无参数创建:', recorderErr)
+      mediaRecorder = new MediaRecorder(mediaStream)
+    }
+
     audioChunks = []
 
     mediaRecorder.ondataavailable = (event) => {
@@ -212,7 +359,8 @@ const startRecording = async () => {
     }
 
     mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+      const audioType = mediaRecorder.mimeType || 'audio/webm'
+      const audioBlob = new Blob(audioChunks, { type: audioType })
       await evaluateSpeech(audioBlob)
 
       // 清理资源
@@ -228,13 +376,22 @@ const startRecording = async () => {
     isRecording.value = true
   } catch (err) {
     console.error('录音启动失败:', err)
+
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
       permissionDenied.value = true
       alert('麦克风权限被拒绝，请在浏览器设置中允许麦克风权限')
     } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
       alert('未找到麦克风设备，请检查设备连接')
+    } else if (err.name === 'NotSupportedError') {
+      alert('您的浏览器不支持录音功能，请使用最新版本的 Chrome、Firefox 或 Safari')
     } else {
-      alert(`录音失败: ${err.message}`)
+      // 检查错误消息是否包含关键信息
+      const errorMsg = err.message || String(err)
+      if (errorMsg.includes('getUserMedia') || errorMsg.includes('undefined')) {
+        alert('您的浏览器不支持录音功能，请升级浏览器或使用最新版本的 Chrome、Firefox、Safari')
+      } else {
+        alert(`录音失败: ${errorMsg}`)
+      }
     }
 
     // 清理失败的资源
@@ -255,7 +412,18 @@ const stopRecording = () => {
 
 // 组件挂载时检查权限
 onMounted(async () => {
-  await checkMicrophonePermission()
+  // 先检查浏览器支持
+  checkBrowserSupport()
+
+  // 如果浏览器支持，再检查权限
+  if (!browserNotSupported.value) {
+    try {
+      await checkMicrophonePermission()
+    } catch (err) {
+      console.error('权限检查失败:', err)
+      // 静默处理错误，不影响页面显示
+    }
+  }
 })
 
 // 组件卸载时清理资源
@@ -592,5 +760,16 @@ const goNext = () => {
   margin-top: 20px;
   font-size: 16px;
   color: rgba(255,255,255,0.8);
+}
+
+.browser-list {
+  font-size: 16px !important;
+  color: #666 !important;
+  text-align: left;
+  background: #f5f5f5;
+  padding: 15px;
+  border-radius: 10px;
+  margin-bottom: 15px;
+  line-height: 1.8;
 }
 </style>

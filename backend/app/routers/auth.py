@@ -1,19 +1,21 @@
+from datetime import datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.db.database import get_db
 from app.models.models import User
-from app.schemas.schemas import UserCreate, UserResponse, Token
-from app.config import get_settings
+from app.schemas.schemas import Token, UserCreate, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 
@@ -34,7 +36,7 @@ def create_access_token(data: dict):
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,39 +51,40 @@ async def get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(User).filter(User.nickname == nickname).first()
+    result = await db.execute(select(User).where(User.nickname == nickname))
+    user = result.scalar_one_or_none()
     if user is None:
         raise credentials_exception
     return user
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate, db: Session = Depends(get_db)):
+async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     """用户注册"""
-    # 检查昵称是否已存在
-    existing_user = db.query(User).filter(User.nickname == user_data.nickname).first()
+    result = await db.execute(select(User).where(User.nickname == user_data.nickname))
+    existing_user = result.scalar_one_or_none()
     if existing_user:
         raise HTTPException(status_code=400, detail="该昵称已被使用")
 
-    # 创建新用户
     hashed_password = get_password_hash(user_data.password)
     new_user = User(
         nickname=user_data.nickname,
         hashed_password=hashed_password
     )
     db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    await db.commit()
+    await db.refresh(new_user)
     return new_user
 
 
 @router.post("/login", response_model=Token)
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """用户登录"""
-    user = db.query(User).filter(User.nickname == form_data.username).first()
+    result = await db.execute(select(User).where(User.nickname == form_data.username))
+    user = result.scalar_one_or_none()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

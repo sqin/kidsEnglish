@@ -26,12 +26,18 @@ from app.models.models import User, Progress, Checkin, Achievement
 from app.config import get_settings
 
 
+def _as_sync_url(db_url: str) -> str:
+    if db_url.startswith("postgresql+asyncpg://"):
+        return db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    return db_url
+
+
 def create_database():
     """创建数据库（如果不存在）"""
     settings = get_settings()
 
     # 从DATABASE_URL提取连接信息
-    db_url = settings.database_url
+    db_url = _as_sync_url(settings.database_url)
     # postgresql://sql:123456@localhost:5432/kids_english
     # 提取为: postgresql://sql:123456@localhost:5432
     base_url = '/'.join(db_url.split('/')[:-1])
@@ -74,7 +80,7 @@ def create_tables():
     settings = get_settings()
 
     print("\n正在创建数据表...")
-    engine = create_engine(settings.database_url)
+    engine = create_engine(_as_sync_url(settings.database_url))
 
     # 创建所有表
     Base.metadata.create_all(bind=engine)
@@ -105,7 +111,7 @@ def test_connection():
 
     print("\n测试数据库连接...")
     try:
-        engine = create_engine(settings.database_url)
+        engine = create_engine(_as_sync_url(settings.database_url))
         with engine.connect() as conn:
             result = conn.execute(text("SELECT 1"))
             result.fetchone()

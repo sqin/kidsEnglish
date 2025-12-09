@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.orm import Session
-import random
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.models.models import User
@@ -19,7 +18,7 @@ async def evaluate_speech(
     letter: str = Form(...),
     audio: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    _db: AsyncSession = Depends(get_db)
 ):
     """
     评估用户语音发音

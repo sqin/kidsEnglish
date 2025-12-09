@@ -1,22 +1,31 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import auth, progress, speech
 from app.db.database import engine, Base
 
-# 创建数据库表
-Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
 
 app = FastAPI(
     title="儿童英语学习API",
     description="面向3-5岁儿童的字母学习打卡应用",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:30002"],  # Vue开发服务器
+    allow_origins=[],
+    allow_origin_regex=r"https?://.*",  # 允许局域网访问
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -1,17 +1,21 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, constr
 
 
 # User schemas
+PasswordStr = constr(min_length=6, max_length=72)
+
+
 class UserCreate(BaseModel):
     nickname: str
-    password: str
+    password: PasswordStr
 
 
 class UserLogin(BaseModel):
     nickname: str
-    password: str
+    password: PasswordStr
 
 
 class UserResponse(BaseModel):

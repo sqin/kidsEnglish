@@ -31,7 +31,7 @@ cd backend
 
 # 配置数据库连接
 cp .env.example .env
-# 编辑 .env 文件，配置数据库连接
+# 编辑 .env 文件，配置数据库连接（使用 postgresql+asyncpg:// 前缀）
 
 # 启动开发服务器
 uv run uvicorn app.main:app --host 0.0.0.0 --port 20000 --reload

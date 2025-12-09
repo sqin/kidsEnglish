@@ -1,10 +1,12 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import model_validator
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     # 数据库配置
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/kids_english"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/kids_english"
 
     # JWT配置
     secret_key: str = "your-secret-key-change-in-production"
@@ -18,6 +20,12 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @model_validator(mode="after")
+    def ensure_async_driver(self):
+        if self.database_url.startswith("postgresql://"):
+            self.database_url = self.database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return self
 
 
 @lru_cache()

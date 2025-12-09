@@ -15,7 +15,7 @@ cd backend
 
 # 配置数据库连接
 cp .env.example .env
-# 编辑 .env 文件，设置 DATABASE_URL
+# 编辑 .env 文件，设置 DATABASE_URL（使用 postgresql+asyncpg:// 前缀）
 
 # 创建数据库
 # 在PostgreSQL中执行: CREATE DATABASE kids_english;

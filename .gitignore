@@ -1,0 +1,3 @@
+*.pyc
+backend/.env
+scripts/setup_lan_access.ps1

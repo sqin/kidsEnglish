@@ -11,10 +11,13 @@ export const authAPI = {
 
   // 用户登录
   login(nickname, password) {
-    return http.post('/api/auth/login', null, {
-      params: {
-        username: nickname,
-        password
+    const formData = new URLSearchParams()
+    formData.append('username', nickname)
+    formData.append('password', password)
+
+    return http.post('/api/auth/login', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded'
       }
     })
   },

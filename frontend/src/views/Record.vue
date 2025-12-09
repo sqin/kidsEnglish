@@ -11,8 +11,23 @@
       <span class="word">{{ currentLetter.word }}</span>
     </div>
 
+    <!-- 权限被拒绝提示 -->
+    <div class="permission-prompt" v-if="permissionDenied && !loading">
+      <div class="prompt-content">
+        <span class="prompt-icon">🔒</span>
+        <h3>需要麦克风权限</h3>
+        <p>请允许访问麦克风以进行语音评分</p>
+        <button class="retry-permission-btn" @click="requestMicrophonePermission">
+          重新授权
+        </button>
+        <p class="help-text">
+          如果问题持续，请检查浏览器设置中的网站权限
+        </p>
+      </div>
+    </div>
+
     <!-- 录音区域 -->
-    <div class="record-area">
+    <div class="record-area" v-else>
       <button
         class="record-button"
         :class="{ recording: isRecording, scored: hasScore, loading: loading }"
@@ -35,6 +50,9 @@
       </p>
       <p class="record-hint" v-else-if="loading">
         正在评分...
+      </p>
+      <p class="permission-check" v-if="!hasPermission && !permissionDenied && !permissionRequested">
+        正在检查麦克风权限...
       </p>
     </div>
 
@@ -69,7 +87,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useLearningStore } from '../stores/learning'
 import { speechAPI } from '../api/speech'
@@ -86,9 +104,14 @@ const score = ref(0)
 const showConfetti = ref(false)
 const scoreRef = ref(null)
 const loading = ref(false)
+const hasPermission = ref(false)
+const permissionDenied = ref(false)
+const permissionRequested = ref(false)
 
 let mediaRecorder = null
 let audioChunks = []
+let audioContext = null
+let mediaStream = null
 
 const currentLetter = computed(() => {
   const letter = route.params.letter.toUpperCase()
@@ -102,38 +125,151 @@ const scoreText = computed(() => {
   return '再试一次吧！🔄'
 })
 
+// 检查麦克风权限
+const checkMicrophonePermission = async () => {
+  try {
+    // 检查浏览器是否支持
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('您的浏览器不支持录音功能')
+    }
+
+    // 检查权限状态
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const audioDevices = devices.filter(device => device.kind === 'audioinput')
+
+    if (audioDevices.length === 0) {
+      throw new Error('未检测到麦克风设备')
+    }
+
+    // 尝试获取权限但不录音
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    })
+
+    // 立即停止流，只为验证权限
+    stream.getTracks().forEach(track => track.stop())
+
+    hasPermission.value = true
+    permissionDenied.value = false
+    return true
+  } catch (err) {
+    console.error('麦克风权限检查失败:', err)
+    hasPermission.value = false
+
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      permissionDenied.value = true
+    }
+    return false
+  }
+}
+
+// 请求麦克风权限
+const requestMicrophonePermission = async () => {
+  permissionRequested.value = true
+  return await checkMicrophonePermission()
+}
+
 // 开始录音
 const startRecording = async () => {
+  // 如果还没有权限，先请求权限
+  if (!hasPermission.value && !permissionRequested.value) {
+    const granted = await requestMicrophonePermission()
+    if (!granted) {
+      return
+    }
+  }
+
+  // 如果权限被拒绝，显示重试提示
+  if (permissionDenied.value) {
+    alert('请允许访问麦克风，然后刷新页面重试')
+    return
+  }
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    mediaRecorder = new MediaRecorder(stream)
+    // 获取音频流
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    })
+
+    // 创建 MediaRecorder
+    mediaRecorder = new MediaRecorder(mediaStream, {
+      mimeType: 'audio/webm;codecs=opus'
+    })
     audioChunks = []
 
-    mediaRecorder.ondataavailable = (e) => {
-      audioChunks.push(e.data)
+    mediaRecorder.ondataavailable = (event) => {
+      if (event.data.size > 0) {
+        audioChunks.push(event.data)
+      }
     }
 
     mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' })
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
       await evaluateSpeech(audioBlob)
-      stream.getTracks().forEach(track => track.stop())
+
+      // 清理资源
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop())
+        mediaStream = null
+      }
+      mediaRecorder = null
+      audioChunks = []
     }
 
     mediaRecorder.start()
     isRecording.value = true
   } catch (err) {
-    console.error('无法访问麦克风:', err)
-    alert('请允许访问麦克风')
+    console.error('录音启动失败:', err)
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      permissionDenied.value = true
+      alert('麦克风权限被拒绝，请在浏览器设置中允许麦克风权限')
+    } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+      alert('未找到麦克风设备，请检查设备连接')
+    } else {
+      alert(`录音失败: ${err.message}`)
+    }
+
+    // 清理失败的资源
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => track.stop())
+      mediaStream = null
+    }
   }
 }
 
 // 停止录音
 const stopRecording = () => {
-  if (mediaRecorder && isRecording.value) {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop()
     isRecording.value = false
   }
 }
+
+// 组件挂载时检查权限
+onMounted(async () => {
+  await checkMicrophonePermission()
+})
+
+// 组件卸载时清理资源
+onBeforeUnmount(() => {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop())
+  }
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop()
+  }
+  if (audioContext && audioContext.state !== 'closed') {
+    audioContext.close()
+  }
+})
 
 // 评估语音
 const evaluateSpeech = async (audioBlob) => {
@@ -392,5 +528,69 @@ const goNext = () => {
 @keyframes confettiFall {
   0% { top: -10%; opacity: 1; transform: rotate(0deg); }
   100% { top: 110%; opacity: 0; transform: rotate(720deg); }
+}
+
+/* 权限提示样式 */
+.permission-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.prompt-content {
+  background: white;
+  border-radius: 30px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+  max-width: 350px;
+}
+
+.prompt-icon {
+  font-size: 80px;
+  display: block;
+  margin-bottom: 20px;
+}
+
+.prompt-content h3 {
+  font-size: 28px;
+  color: #333;
+  margin-bottom: 15px;
+}
+
+.prompt-content p {
+  font-size: 18px;
+  color: #666;
+  margin-bottom: 25px;
+  line-height: 1.5;
+}
+
+.retry-permission-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  padding: 15px 40px;
+  border-radius: 15px;
+  font-size: 18px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  margin-bottom: 15px;
+}
+
+.retry-permission-btn:active {
+  transform: scale(0.95);
+}
+
+.help-text {
+  font-size: 14px !important;
+  color: #999 !important;
+  margin-bottom: 0 !important;
+}
+
+.permission-check {
+  margin-top: 20px;
+  font-size: 16px;
+  color: rgba(255,255,255,0.8);
 }
 </style>

@@ -95,7 +95,7 @@ const playSound = () => {
   }
 
   // 播放奖励音效
-  playRewardSound()
+  // playRewardSound()
 
   // 更新进度
   if (progress.value.stage === 0) {

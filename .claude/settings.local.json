@@ -17,7 +17,10 @@
       "Bash(chmod:*)",
       "Bash(./create_db.sh:*)",
       "Bash(curl:*)",
-      "Bash(npm run build)"
+      "Bash(npm run build)",
+      "Bash(netstat -tlnp)",
+      "Bash(ss:*)",
+      "Bash(sudo iptables:*)"
     ],
     "deny": [],
     "ask": []

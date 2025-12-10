@@ -24,7 +24,10 @@ app = FastAPI(
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[],
+    allow_origins=[
+        "http://lsq67.rf.gd",
+        "https://lsq67.rf.gd",
+    ],
     allow_origin_regex=r"https?://.*",  # 允许局域网访问
     allow_credentials=True,
     allow_methods=["*"],

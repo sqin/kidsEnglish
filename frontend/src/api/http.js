@@ -2,7 +2,7 @@ import axios from 'axios'
 
 // 创建axios实例
 const http = axios.create({
-  baseURL: `http://${window.location.hostname}:20000`,
+  baseURL: 'http://16.170.205.245:20000',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'

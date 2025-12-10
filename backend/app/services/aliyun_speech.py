@@ -8,6 +8,8 @@
 4. 配置到.env文件中
 
 文档：https://help.aliyun.com/document_detail/84435.html
+
+当前实现使用HTTP API直接调用，确保与最新SDK版本兼容
 """
 
 import json
@@ -16,191 +18,177 @@ import time
 import hmac
 import hashlib
 import asyncio
-import threading
 from typing import Optional
 from urllib.parse import urlencode
+from datetime import datetime
 
 import httpx
 from app.config import get_settings
-import nls
 
 
 class AliyunSpeechEvaluator:
-    """阿里云语音评测客户端"""
+    """阿里云语音评测客户端（使用HTTP API）"""
 
     def __init__(self):
         self.settings = get_settings()
         self.access_key_id = self.settings.aliyun_access_key_id
         self.access_key_secret = self.settings.aliyun_access_key_secret
         self.app_key = self.settings.aliyun_app_key
-        
-        # 评测结果存储
-        self.eval_result = None
-        self.eval_error = None
-        self.completed_event = None
 
         if not all([self.access_key_id, self.access_key_secret, self.app_key]):
             raise ValueError("阿里云配置不完整，请在.env文件中配置ALIYUN_ACCESS_KEY_ID等")
 
-    def _on_result_changed(self, message, *args):
-        """中间结果回调"""
-        pass
+    def _generate_signature(self, method: str, url: str, params: dict, body: str = "") -> str:
+        """生成阿里云API签名（简化版）"""
+        # 对URL进行编码
+        import urllib.parse
 
-    def _on_completed(self, message, *args):
-        """最终结果回调"""
-        try:
-            self.eval_result = json.loads(message)
-        except Exception as e:
-            self.eval_error = str(e)
-        finally:
-            if self.completed_event:
-                self.completed_event.set()
+        # 移除签名相关参数
+        params_to_sign = {k: v for k, v in params.items() if k != 'signature'}
 
-    def _on_error(self, message, *args):
-        """错误回调"""
-        self.eval_error = message
-        if self.completed_event:
-            self.completed_event.set()
+        # 按照阿里云规范对参数进行排序和编码
+        sorted_params = sorted(params_to_sign.items())
+        query_string = urllib.parse.quote_plus("&".join([f"{k}={v}" for k, v in sorted_params]))
 
-    def _on_close(self, *args):
-        """连接关闭回调"""
-        pass
-        
-    def _run_evaluation(self, audio_data: bytes, letter: str, event: threading.Event):
-        """
-        在同步线程中运行SDK评估逻辑
-        """
-        self.completed_event = event
-        self.eval_result = None
-        self.eval_error = None
-        
-        # 定义回调字典
-        callbacks = {
-            "RecognitionCompleted": self._on_completed,
-            "RecognitionResultChanged": self._on_result_changed,
-            "TaskFailed": self._on_error
-        }
-        
-        # 使用 CommonProto 实现语音评测 (SpeechRecognizer 命名空间)
-        # 注意：语音评测通常复用 SpeechRecognizer 命名空间，但参数略有不同
-        # 或者使用专门的 SpeechEvaluator 如果 SDK 提供（当前 SDK版本似乎更倾向于通用协议或ASR）
-        # 这里我们使用 SpeechRecognizer 接口进行评测，因为阿里云文档指出评测也是一种识别请求
-        
-        # 实例化 CommonProto
-        # 文档参考：https://help.aliyun.com/document_detail/84435.html
-        sr = nls.NlsCommonProto(
-            url="wss://nls-gateway.cn-shanghai.aliyuncs.com/ws/v1",
+        # 构造待签名字符串
+        string_to_sign = f"{method}&%2F&{query_string}"
+
+        # 使用HMAC-SHA1算法计算签名
+        signature = hmac.new(
+            (self.access_key_secret + "&").encode('utf-8'),
+            string_to_sign.encode('utf-8'),
+            hashlib.sha1
+        ).digest()
+
+        return base64.b64encode(signature).decode('utf-8')
+
+    def _get_token(self) -> str:
+        """获取访问令牌"""
+        # 使用SDK获取token
+        import nls.token
+
+        token = nls.token.getToken(
             akid=self.access_key_id,
-            aksecret=self.access_key_secret,
-            appkey=self.app_key,
-            namespace="SpeechEvaluator",  # 显式指定 SpeechEvaluator 命名空间
-            on_error=self._on_error,
-            on_close=self._on_close,
-            user_callback=callbacks
+            aksecret=self.access_key_secret
         )
-        
-        try:
-            # 启动请求
-            # format: pcm/wav/mp3
-            # sample_rate: 16000
-            # text: 评测文本
-            # mode: word/sentence (单词/句子)
-            sr.start(
-                name="StartEvaluation",
-                payload={
-                    "format": "pcm", 
-                    "sample_rate": 16000,
-                    "text": letter,
-                    "mode": "word"  # 字母发音按单词评测
-                }
-            )
-            
-            # 发送音频数据 (分块发送)
-            chunk_size = 640  # 20ms at 16kHz
-            slices = zip(*(iter(audio_data),) * chunk_size)
-            for i in slices:
-                sr.send_binary(bytes(i))
-                time.sleep(0.02)  # 模拟实时流
-                
-            # 发送剩余数据
-            remaining = len(audio_data) % chunk_size
-            if remaining > 0:
-                sr.send_binary(audio_data[-remaining:])
-            
-            # 停止请求
-            sr.send_text(name="StopEvaluation")
-            
-            # 等待结果（带超时）
-            if not event.wait(timeout=10):
-                self.eval_error = "Timeout waiting for evaluation result"
-                
-        except Exception as e:
-            self.eval_error = str(e)
-        finally:
-            sr.shutdown()
+        return token
+
+    async def _call_evaluation_api(self, audio_data: bytes, letter: str) -> dict:
+        """
+        调用阿里云语音评测HTTP API
+        """
+        # 获取访问令牌
+        token = self._get_token()
+
+        # 准备请求URL和参数
+        url = "https://nls-gateway.cn-shanghai.aliyuncs.com/stream/v1/asr"
+
+        # 阿里云语音识别/评测API参数
+        params = {
+            "appkey": self.app_key,
+            "timestamp": str(int(time.time() * 1000)),
+            "sign_type": "HMAC-SHA1",
+            "sign_version": "1.0",
+            "v": "2.0",
+            "aformat": "wav",
+            "sample_rate": 16000,
+            "text": letter.upper(),  # 评测文本
+            "token": token,  # 添加token参数
+        }
+
+        # 生成签名
+        params["signature"] = self._generate_signature("POST", "/stream/v1/asr", params)
+
+        # 准备音频数据
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+
+        # 构建请求体
+        payload = {
+            "audio": audio_base64,
+            "aformat": "wav",
+            "sample_rate": 16000,
+            "text": letter.upper()
+        }
+
+        # 发送请求
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, params=params, json=payload, headers=headers)
+
+            if response.status_code != 200:
+                raise Exception(f"API请求失败: {response.status_code} - {response.text}")
+
+            result = response.json()
+            return result
 
     async def evaluate(self, audio_data: bytes, letter: str) -> dict:
         """
         评估语音
-        
+
         Args:
             audio_data: 音频数据 (WAV/PCM格式)
             letter: 目标字母
-            
+
         Returns:
             评估结果字典
         """
-        # 如果没有音频数据或字母，直接返回模拟失败
+        # 如果没有音频数据或字母，返回错误
         if not audio_data or not letter:
-            return await self._mock_evaluate(audio_data, letter)
+            raise ValueError("音频数据和字母不能为空")
 
         try:
-            # 创建同步事件
-            event = threading.Event()
-            
-            # 在独立线程中运行SDK（因为SDK是阻塞/同步的）
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, self._run_evaluation, audio_data, letter, event)
-            
-            # 检查结果
-            if self.eval_error:
-                print(f"阿里云评测出错: {self.eval_error}, 降级使用本地模拟")
-                return await self._mock_evaluate(audio_data, letter)
-                
-            if self.eval_result and 'payload' in self.eval_result:
-                payload = self.eval_result['payload']
-                result = payload.get('result', {})
-                
-                # 解析评分 (通常是 0-100 或 0-1.0)
-                # 阿里云评测返回结构参考：
-                # "payload": { "result": { "overall": 95, "words": [...] } }
-                score = result.get('overall', 0)
-                
-                # 转换为业务格式
-                if score >= 85:
-                    stars = 3
-                    feedback = f"太棒了！你的 {letter} 发音非常标准！"
-                elif score >= 70:
-                    stars = 2
-                    feedback = f"很好！{letter} 发音不错，继续加油！"
+            # 调用阿里云API
+            result = await self._call_evaluation_api(audio_data, letter)
+
+            # 解析API响应
+            status = result.get('status', 200)
+            if status != 20000000:
+                error_msg = result.get('message', '未知错误')
+                print(f"阿里云评测API错误: {error_msg}")
+                raise Exception(f"API错误: {error_msg}")
+
+            # 提取评测结果
+            eval_result = result.get('result') or result.get('score')
+
+            if eval_result:
+                if isinstance(eval_result, dict):
+                    score = eval_result.get('overall') or eval_result.get('pronunciation_score') or eval_result.get('score', 0)
+                elif isinstance(eval_result, (int, float)):
+                    score = eval_result
                 else:
-                    stars = 1
-                    feedback = f"不错的开始！再练习一下 {letter} 的发音吧！"
-                    
-                return {
-                    "score": stars,
-                    "accuracy": round(score, 1),
-                    "feedback": feedback,
-                    "audio_length": len(audio_data),
-                    "details": result  # 保留详细结果供调试
-                }
-                
-            # 如果没有有效结果，回退
-            return await self._mock_evaluate(audio_data, letter)
+                    score = 0
+            else:
+                score = 0
+
+            # 确保分数在合理范围内
+            if score > 100:
+                score = min(score, 100)
+
+            # 转换为星星评分
+            if score >= 85:
+                stars = 3
+                feedback = f"太棒了！你的 {letter} 发音非常标准！"
+            elif score >= 70:
+                stars = 2
+                feedback = f"很好！{letter} 发音不错，继续加油！"
+            else:
+                stars = 1
+                feedback = f"不错的开始！再练习一下 {letter} 的发音吧！"
+
+            return {
+                "score": stars,
+                "accuracy": round(score, 1) if isinstance(score, (int, float)) else 0,
+                "feedback": feedback,
+                "audio_length": len(audio_data),
+                "details": result
+            }
 
         except Exception as e:
             print(f"阿里云语音评估异常: {e}")
-            return await self._mock_evaluate(audio_data, letter)
+            raise  # 重新抛出异常，不使用模拟评估
 
     async def _mock_evaluate(self, audio_data: bytes, letter: str) -> dict:
         """
@@ -251,11 +239,7 @@ def get_speech_evaluator() -> Optional[AliyunSpeechEvaluator]:
     """获取语音评估器实例"""
     global _speech_evaluator
     if _speech_evaluator is None:
-        try:
-            _speech_evaluator = AliyunSpeechEvaluator()
-        except Exception as e:
-            print(f"初始化语音评估器失败: {e}")
-            _speech_evaluator = None
+        _speech_evaluator = AliyunSpeechEvaluator()
     return _speech_evaluator
 
 
@@ -263,29 +247,11 @@ async def evaluate_speech(audio_data: bytes, letter: str) -> dict:
     """
     评估语音的主函数
 
-    优先使用阿里云API，如果不可用则使用本地模拟
+    使用阿里云API进行语音评测
     """
     evaluator = get_speech_evaluator()
 
-    if evaluator:
-        return await evaluator.evaluate(audio_data, letter)
-    else:
-        # 使用本地模拟
-        import random
-        score = random.randint(60, 100)
+    if not evaluator:
+        raise ValueError("阿里云语音评测服务未正确配置，请检查.env文件中的ALIYUN_*配置")
 
-        if score >= 85:
-            stars = 3
-            feedback = f"太棒了！你的 {letter} 发音非常标准！"
-        elif score >= 70:
-            stars = 2
-            feedback = f"很好！{letter} 发音不错，继续加油！"
-        else:
-            stars = 1
-            feedback = f"不错的开始！再练习一下 {letter} 的发音吧！"
-
-        return {
-            "score": stars,
-            "accuracy": score,
-            "feedback": feedback
-        }
+    return await evaluator.evaluate(audio_data, letter)

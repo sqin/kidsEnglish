@@ -115,9 +115,84 @@ npm run dev
 3. 选择任意字母 → 点击"发音"
 4. 尝试录音功能
 
+## API 请求修复
+
+✅ **已解决**：前端HTTPS页面发送HTTP请求导致"混合内容"错误
+
+### 问题描述
+使用HTTPS证书后，前端运行在HTTPS，但API请求仍然是HTTP，导致：
+- 浏览器阻止混合内容请求
+- 前端无法与后端通信
+- 控制台出现CORS或网络错误
+
+### 解决方案
+
+**1. 前端API配置自动适配协议**
+修改了 `frontend/src/api/http.js`，现在会根据当前页面协议自动选择：
+
+```javascript
+const protocol = window.location.protocol === 'https:' ? 'https' : 'http'
+const http = axios.create({
+  baseURL: `${protocol}://${window.location.hostname}:20000`,
+  // ...
+})
+```
+
+**2. 后端HTTPS支持**
+- 添加了SSL证书配置支持（`backend/app/config.py`）
+- 更新了启动脚本（`backend/start.sh`）
+- 自动检测frontend/ssl/目录下的证书并启用HTTPS
+
+### 启动方式
+
+**后端启动（自动检测HTTPS）**
+```bash
+cd backend
+./start.sh
+```
+
+启动脚本会自动：
+1. 检查 `../frontend/ssl/server.key` 和 `../frontend/ssl/server.crt`
+2. 如果存在，使用HTTPS启动后端
+3. 否则，使用HTTP启动后端
+
+**前端启动**
+```bash
+cd frontend
+npm run dev
+```
+
+### 验证HTTPS连接
+
+1. 访问前端：`https://你的IP:30002`
+2. 打开浏览器开发者工具 → Network选项卡
+3. 点击任意字母，检查API请求：
+   - ✅ 正确：显示协议为 `https://你的IP:20000/api/...`
+   - ❌ 错误：显示协议为 `http://你的IP:20000/api/...`
+
 ## 故障排除
 
-### 问题1：端口被占用
+### 问题1：API请求仍为HTTP
+
+**检查步骤**：
+1. 确认后端使用HTTPS启动：
+   ```
+   检测到SSL证书，启动HTTPS服务器...
+   ```
+2. 清除浏览器缓存和localStorage
+3. 刷新页面并重新登录
+
+**解决方法**：
+```bash
+# 重新启动后端
+cd backend
+./start.sh
+
+# 清除浏览器存储
+# 开发者工具 → Application/应用 → Storage → Clear Storage
+```
+
+### 问题2：端口被占用
 
 **错误**：Error: listen EADDRINUSE: address already in use :::30002
 

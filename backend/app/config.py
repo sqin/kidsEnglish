@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     aliyun_access_key_secret: str = ""
     aliyun_app_key: str = ""
 
+    # HTTPS配置
+    ssl_keyfile: str = ""
+    ssl_certfile: str = ""
+
     class Config:
         env_file = ".env"
 

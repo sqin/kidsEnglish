@@ -20,7 +20,8 @@
       "Bash(npm run build)",
       "Bash(netstat -tlnp)",
       "Bash(ss:*)",
-      "Bash(sudo iptables:*)"
+      "Bash(sudo iptables:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

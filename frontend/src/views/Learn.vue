@@ -6,25 +6,19 @@
     </button>
 
     <!-- 字母展示区 -->
-    <div class="letter-display" ref="letterRef">
+    <div class="letter-display" ref="letterRef" @click="handlePlayLetter">
       <div class="big-letter">{{ currentLetter.letter }}</div>
       <div class="small-letter">{{ currentLetter.letter.toLowerCase() }}</div>
     </div>
 
     <!-- 关联单词 -->
-    <div class="word-section">
+    <div class="word-section" @click="handlePlayWord">
       <span class="word-image">{{ currentLetter.image }}</span>
       <span class="word-text">{{ currentLetter.word }}</span>
     </div>
 
     <!-- 操作按钮 -->
     <div class="action-buttons">
-      <!-- 听发音 -->
-      <button class="action-btn listen-btn" @click="playSound">
-        <span class="btn-icon">🔊</span>
-        <span>听发音</span>
-      </button>
-
       <!-- 跟读练习 -->
       <button class="action-btn record-btn" @click="goToRecord">
         <span class="btn-icon">🎤</span>
@@ -52,7 +46,7 @@
 
     <!-- 阶段提示 -->
     <div class="stage-hint">
-      <span v-if="progress.stage === 0">第一步：点击听发音 👆</span>
+      <span v-if="progress.stage === 0">第一步：点击字母或单词听发音 👆</span>
       <span v-else-if="progress.stage === 1">第二步：跟着读一读 🎤</span>
       <span v-else-if="progress.stage >= 2">太棒了！继续练习 🌟</span>
     </div>
@@ -70,7 +64,7 @@ const route = useRoute()
 const router = useRouter()
 const store = useLearningStore()
 const letterRef = ref(null)
-const { playLetterSound, playRewardSound } = useAudio()
+const { playLetterSound, playWordSound, playRewardSound } = useAudio()
 
 const currentLetter = computed(() => {
   const letter = route.params.letter.toUpperCase()
@@ -81,12 +75,10 @@ const progress = computed(() => {
   return store.getLetterProgress(currentLetter.value.id)
 })
 
-// 播放发音
-const playSound = () => {
-  // 播放字母发音
+// 播放字母发音
+const handlePlayLetter = () => {
   playLetterSound(currentLetter.value.letter)
 
-  // 播放动画
   if (letterRef.value) {
     gsap.fromTo(letterRef.value,
       { scale: 1 },
@@ -94,10 +86,15 @@ const playSound = () => {
     )
   }
 
-  // 播放奖励音效
-  // playRewardSound()
+  if (progress.value.stage === 0) {
+    store.updateProgress(currentLetter.value.id, 1, 0)
+  }
+}
 
-  // 更新进度
+// 播放单词发音
+const handlePlayWord = () => {
+  playWordSound(currentLetter.value.word)
+
   if (progress.value.stage === 0) {
     store.updateProgress(currentLetter.value.id, 1, 0)
   }
@@ -150,6 +147,7 @@ onMounted(() => {
   text-align: center;
   box-shadow: 0 10px 40px rgba(0,0,0,0.2);
   margin-bottom: 30px;
+  cursor: pointer;
 }
 
 .big-letter {
@@ -173,6 +171,7 @@ onMounted(() => {
   padding: 20px 40px;
   border-radius: 20px;
   margin-bottom: 40px;
+  cursor: pointer;
 }
 
 .word-image {

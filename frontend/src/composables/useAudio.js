@@ -8,19 +8,19 @@ export function useAudio() {
   const currentAudio = ref(null)
 
   /**
-   * 播放字母发音
-   * @param {string} letter - 字母 (a-z)
+   * 公共播放函数，支持字母和单词音频
+   * @param {string} path - 相对 public 的音频路径
+   * @param {string} fallbackText - 当音频缺失时使用语音合成播报的文本
    */
-  const playLetterSound = (letter) => {
+  const playAudioFile = (path, fallbackText) => {
     // 停止当前播放的音频
     if (currentAudio.value) {
       currentAudio.value.pause()
       currentAudio.value = null
     }
 
-    // 尝试从本地文件加载
     try {
-      const audio = new Audio(`/audio/${letter.toLowerCase()}.mp3`)
+      const audio = new Audio(path)
       audio.volume = 0.8
 
       audio.onplay = () => {
@@ -33,18 +33,33 @@ export function useAudio() {
       }
 
       audio.onerror = () => {
-        // 如果文件不存在，使用Web Speech API
-        console.log(`音频文件不存在，使用语音合成: ${letter}`)
-        playWithSpeechSynthesis(letter)
+        console.log(`音频文件不存在，使用语音合成: ${fallbackText}`)
+        playWithSpeechSynthesis(fallbackText)
       }
 
       currentAudio.value = audio
       audio.play()
     } catch (error) {
-      // 如果加载失败，使用Web Speech API
       console.log('使用语音合成:', error)
-      playWithSpeechSynthesis(letter)
+      playWithSpeechSynthesis(fallbackText)
     }
+  }
+
+  /**
+   * 播放字母发音
+   * @param {string} letter - 字母 (a-z)
+   */
+  const playLetterSound = (letter) => {
+    playAudioFile(`/audio/${letter.toLowerCase()}.mp3`, letter)
+  }
+
+  /**
+   * 播放单词发音
+   * @param {string} word - 单词，使用小写/包含连字符的文件名
+   */
+  const playWordSound = (word) => {
+    const normalized = word.toLowerCase()
+    playAudioFile(`/audio/${normalized}.mp3`, word)
   }
 
   /**
@@ -118,6 +133,7 @@ export function useAudio() {
   return {
     isPlaying,
     playLetterSound,
+    playWordSound,
     playRewardSound,
     stop
   }

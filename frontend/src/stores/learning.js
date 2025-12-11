@@ -27,7 +27,7 @@ export const useLearningStore = defineStore('learning', () => {
     { id: 21, letter: 'U', word: 'Umbrella', image: '☂️', audio: '/audio/u.mp3' },
     { id: 22, letter: 'V', word: 'Violin', image: '🎻', audio: '/audio/v.mp3' },
     { id: 23, letter: 'W', word: 'Watermelon', image: '🍉', audio: '/audio/w.mp3' },
-    { id: 24, letter: 'X', word: 'Xylophone', image: '🎵', audio: '/audio/x.mp3' },
+    { id: 24, letter: 'X', word: 'X-ray', image: '🩻', audio: '/audio/x-ray.mp3' },
     { id: 25, letter: 'Y', word: 'Yo-yo', image: '🪀', audio: '/audio/y.mp3' },
     { id: 26, letter: 'Z', word: 'Zebra', image: '🦓', audio: '/audio/z.mp3' }
   ])

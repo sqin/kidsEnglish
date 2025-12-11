@@ -1,8 +1,12 @@
 import axios from 'axios'
 
 // 创建axios实例
+const apiBase =
+  (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '') || ''
+
 const http = axios.create({
-  baseURL: 'http://16.170.205.245:20000',
+  // Use same-origin by default so the dev proxy handles HTTPS->HTTP
+  baseURL: apiBase || '/',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json'

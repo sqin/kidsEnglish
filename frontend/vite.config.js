@@ -11,11 +11,14 @@ export default defineConfig(({ mode }) => {
     server: {
       host: '0.0.0.0',
       port: 30002,
-      // 允许来自局域网的连接
+      // 允许来自局域网的连接和域名
       allowedHosts: [
         '.lan',
         '.local',
-        '.localnet'
+        '.localnet',
+        'kids.sql67.xyz',
+        'sql67.xyz',
+        'www.sql67.xyz'
       ],
       proxy: {
         // Forward API calls to backend to avoid mixed-content issues

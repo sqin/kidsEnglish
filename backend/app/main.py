@@ -1,5 +1,4 @@
 from contextlib import asynccontextmanager
-import ssl
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,34 +85,13 @@ async def get_letters():
     return letters
 
 
-def create_ssl_context(settings):
-    """创建SSL上下文"""
-    if settings.ssl_keyfile and settings.ssl_certfile:
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain(settings.ssl_certfile, settings.ssl_keyfile)
-        return ssl_context
-    return None
-
-
 if __name__ == "__main__":
     import uvicorn
 
-    settings = get_settings()
-    ssl_context = create_ssl_context(settings)
-
-    if ssl_context:
-        uvicorn.run(
-            "app.main:app",
-            host="0.0.0.0",
-            port=20000,
-            ssl_keyfile=settings.ssl_keyfile,
-            ssl_certfile=settings.ssl_certfile,
-            reload=True
-        )
-    else:
-        uvicorn.run(
-            "app.main:app",
-            host="0.0.0.0",
-            port=20000,
-            reload=True
-        )
+    # 生产环境使用 HTTP（Nginx 处理 HTTPS）
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=20000,
+        reload=True
+    )

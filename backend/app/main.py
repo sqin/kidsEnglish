@@ -27,8 +27,8 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://lsq67.rf.gd",
-        "https://lsq67.rf.gd",
+        "https://kids.sql67.xyz",  # 添加新域名
+        "https://sql67.xyz",       # 如果需要
     ],
     allow_origin_regex=r"https?://.*",  # 允许局域网访问
     allow_credentials=True,

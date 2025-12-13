@@ -90,9 +90,6 @@ class AliyunSpeechEvaluator:
                 audio_format = "wav"
             elif audio_data[:4] == b'\x1aE\xdf\xa3':
                 audio_format = "webm"
-                # #region agent log
-                import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:92','message':'检测到webm格式','data':{'audioSize':len(audio_data),'detectedFormat':audio_format},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run2','hypothesisId':'D'})+'\n')
-                # #endregion
             elif audio_data[:3] == b'ID3' or (len(audio_data) >= 2 and audio_data[:2] == b'\xff\xfb'):
                 audio_format = "mp3"
         
@@ -122,34 +119,19 @@ class AliyunSpeechEvaluator:
             "sample_rate": 16000,
             "text": letter.upper()
         }
-        # #region agent log
-        import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:117','message':'设置API请求payload','data':{'aformat':audio_format,'audioBase64Length':len(audio_base64)},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run2','hypothesisId':'D'})+'\n')
-        # #endregion
 
         # 发送请求
         headers = {
             "Content-Type": "application/json"
         }
 
-        # #region agent log
-        import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:118','message':'准备发送阿里云API请求','data':{'url':url,'audioBase64Length':len(audio_base64),'paramsKeys':list(params.keys()),'payloadKeys':list(payload.keys()),'letter':letter},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-        # #endregion
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, params=params, json=payload, headers=headers)
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:119','message':'收到阿里云API响应','data':{'statusCode':response.status_code,'responseTextLength':len(response.text),'hasJson':bool(response.text)},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-            # #endregion
 
             if response.status_code != 200:
-                # #region agent log
-                import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:121','message':'API返回非200状态码','data':{'statusCode':response.status_code,'responseText':response.text[:500]},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-                # #endregion
                 raise Exception(f"API请求失败: {response.status_code} - {response.text}")
 
             result = response.json()
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:125','message':'解析API响应JSON','data':{'resultKeys':list(result.keys()) if isinstance(result,dict) else 'not_dict','resultStr':str(result)[:500]},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-            # #endregion
             return result
 
     async def evaluate(self, audio_data: bytes, letter: str) -> dict:
@@ -163,9 +145,6 @@ class AliyunSpeechEvaluator:
         Returns:
             评估结果字典
         """
-        # #region agent log
-        import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:127','message':'evaluate开始，准备调用阿里云API','data':{'audioSize':len(audio_data),'letter':letter},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'C'})+'\n')
-        # #endregion
         # 如果没有音频数据或字母，返回错误
         if not audio_data or not letter:
             raise ValueError("音频数据和字母不能为空")
@@ -173,50 +152,26 @@ class AliyunSpeechEvaluator:
         try:
             # 调用阿里云API
             result = await self._call_evaluation_api(audio_data, letter)
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:144','message':'阿里云API调用返回','data':{'resultKeys':list(result.keys()) if isinstance(result,dict) else 'not_dict','status':result.get('status') if isinstance(result,dict) else None,'hasResult':bool(result.get('result')) if isinstance(result,dict) else False,'hasScore':bool(result.get('score')) if isinstance(result,dict) else False},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-            # #endregion
 
             # 解析API响应
             status = result.get('status', 200)
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:147','message':'检查API响应状态','data':{'status':status,'expectedStatus':20000000},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-            # #endregion
             if status != 20000000:
                 error_msg = result.get('message', '未知错误')
-                # #region agent log
-                import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:149','message':'API返回错误状态','data':{'status':status,'errorMsg':error_msg},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-                # #endregion
                 print(f"阿里云评测API错误: {error_msg}")
                 raise Exception(f"API错误: {error_msg}")
 
             # 提取评测结果
             eval_result = result.get('result') or result.get('score')
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:154','message':'提取评测结果','data':{'hasResult':bool(result.get('result')),'hasScore':bool(result.get('score')),'evalResultType':type(eval_result).__name__ if eval_result else None,'evalResultKeys':list(eval_result.keys()) if isinstance(eval_result,dict) else None},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-            # #endregion
 
             if eval_result:
                 if isinstance(eval_result, dict):
                     score = eval_result.get('overall') or eval_result.get('pronunciation_score') or eval_result.get('score', 0)
-                    # #region agent log
-                    import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:158','message':'从字典提取分数','data':{'score':score,'overall':eval_result.get('overall'),'pronunciation_score':eval_result.get('pronunciation_score'),'score_key':eval_result.get('score')},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-                    # #endregion
                 elif isinstance(eval_result, (int, float)):
                     score = eval_result
-                    # #region agent log
-                    import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:160','message':'eval_result是数值类型','data':{'score':score},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-                    # #endregion
                 else:
                     score = 0
-                    # #region agent log
-                    import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:162','message':'eval_result类型不匹配，设为0','data':{'evalResultType':type(eval_result).__name__},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-                    # #endregion
             else:
                 score = 0
-                # #region agent log
-                import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:164','message':'eval_result为空，设为0','data':{},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-                # #endregion
 
             # 确保分数在合理范围内
             if score > 100:
@@ -232,9 +187,6 @@ class AliyunSpeechEvaluator:
             else:
                 stars = 1
                 feedback = f"不错的开始！再练习一下 {letter} 的发音吧！"
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:177','message':'评分转换完成','data':{'originalScore':score if 'score' in locals() else None,'stars':stars,'feedback':feedback},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
-            # #endregion
 
             return {
                 "score": stars,
@@ -245,9 +197,6 @@ class AliyunSpeechEvaluator:
             }
 
         except Exception as e:
-            # #region agent log
-            import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'aliyun_speech.py:189','message':'evaluate异常','data':{'errorType':type(e).__name__,'errorMessage':str(e)},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'D'})+'\n')
-            # #endregion
             print(f"阿里云语音评估异常: {e}")
             raise  # 重新抛出异常，不使用模拟评估
 

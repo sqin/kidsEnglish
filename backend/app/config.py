@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     aliyun_access_key_secret: str = ""
     aliyun_app_key: str = ""
 
+    # Whisper配置
+    whisper_model_size: str = "base"  # tiny, base, small, medium, large
+    whisper_device: str = "cpu"  # cpu or cuda
+    whisper_language: str = "en"  # 默认英语
+
     # HTTPS配置
     ssl_keyfile: str = ""
     ssl_certfile: str = ""

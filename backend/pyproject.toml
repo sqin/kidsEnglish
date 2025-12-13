@@ -19,6 +19,7 @@ dependencies = [
     "httpx>=0.25.0",
     "python-dotenv>=1.0.0",
     "alibabacloud-nls-python-sdk>=1.0.2",
+    "faster-whisper>=1.0.0",
 ]
 
 [build-system]

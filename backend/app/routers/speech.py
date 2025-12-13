@@ -9,7 +9,7 @@ from app.models.models import User, Recording
 from app.schemas.schemas import SpeechEvalResponse, RecordingResponse
 from app.routers.auth import get_current_user
 from app.config import get_settings
-from app.services.aliyun_speech import evaluate_speech as evaluate_speech_service
+from app.services.whisper_speech import evaluate_speech as evaluate_speech_service
 
 router = APIRouter(prefix="/speech", tags=["语音评分"])
 
@@ -52,7 +52,7 @@ async def evaluate_speech(
     if len(audio_content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="音频文件过大")
 
-    # 使用语音评分服务（阿里云API或本地模拟）
+    # 使用语音评分服务（Whisper）
     result = await evaluate_speech_service(audio_content, letter)
 
     return SpeechEvalResponse(
@@ -98,12 +98,33 @@ async def save_recording(
     if len(audio_content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="音频文件过大")
 
+    # 获取字母ID
+    letter_id = ord(letter) - ord('A') + 1
+
+    # 检查是否已存在该用户和字母的录音记录
+    result = await db.execute(
+        select(Recording).where(
+            Recording.user_id == current_user.id,
+            Recording.letter_id == letter_id
+        )
+    )
+    existing_recording = result.scalar_one_or_none()
+
     # 生成文件名：用户ID_字母_时间戳.扩展名
     file_ext = audio.filename.split('.')[-1] if '.' in audio.filename else 'webm'
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     filename = f"{current_user.id}_{letter}_{timestamp}.{file_ext}"
     file_path = UPLOAD_DIR / filename
+
+    # 如果已存在记录，删除旧文件
+    if existing_recording:
+        old_file_path = Path(existing_recording.file_path)
+        if old_file_path.exists():
+            try:
+                old_file_path.unlink()
+            except Exception:
+                pass  # 忽略删除旧文件时的错误
 
     # 保存文件
     try:
@@ -112,22 +133,29 @@ async def save_recording(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
 
-    # 获取字母ID
-    letter_id = ord(letter) - ord('A') + 1
-
     # 生成文件URL（相对路径，前端需要配置正确的baseURL）
     file_url = f"/api/speech/audio/{filename}"
 
-    # 保存到数据库
-    recording = Recording(
-        user_id=current_user.id,
-        letter_id=letter_id,
-        letter=letter,
-        file_path=str(file_path),
-        file_url=file_url,
-        score=score
-    )
-    db.add(recording)
+    # 更新或创建录音记录
+    if existing_recording:
+        # 更新现有记录
+        existing_recording.letter = letter
+        existing_recording.file_path = str(file_path)
+        existing_recording.file_url = file_url
+        existing_recording.score = score
+        recording = existing_recording
+    else:
+        # 创建新记录
+        recording = Recording(
+            user_id=current_user.id,
+            letter_id=letter_id,
+            letter=letter,
+            file_path=str(file_path),
+            file_url=file_url,
+            score=score
+        )
+        db.add(recording)
+
     await db.commit()
     await db.refresh(recording)
 

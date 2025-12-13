@@ -52,10 +52,12 @@
         class="record-button"
         :class="{ recording: isRecording, scored: hasScore, loading: loading }"
         :disabled="loading"
-        @mousedown="startRecording"
-        @mouseup="stopRecording"
-        @touchstart.prevent="startRecording"
-        @touchend.prevent="stopRecording"
+        @mousedown.prevent="handleRecordStart"
+        @mouseup.prevent="handleRecordStop"
+        @mouseleave.prevent="handleRecordStop"
+        @touchstart.prevent="handleRecordStart"
+        @touchend.prevent="handleRecordStop"
+        @touchcancel.prevent="handleRecordStop"
       >
         <span class="record-icon" v-if="!isRecording && !hasScore && !loading">🎤</span>
         <span class="record-icon pulse" v-else-if="isRecording">🔴</span>
@@ -133,6 +135,8 @@ let mediaRecorder = null
 let audioChunks = []
 let audioContext = null
 let mediaStream = null
+let recordingStartTime = null
+const MIN_RECORDING_DURATION = 500 // 最小录音时长500毫秒
 
 const currentLetter = computed(() => {
   const letter = route.params.letter.toUpperCase()
@@ -253,12 +257,96 @@ const requestMicrophonePermission = async () => {
   return await checkMicrophonePermission()
 }
 
+// 处理录音开始（防止事件冲突）
+const handleRecordStart = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:258',message:'handleRecordStart被调用',data:{eventType:event.type,isRecording:isRecording.value},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
+  if (!isRecording.value) {
+    startRecording(event)
+  }
+}
+
+// 处理录音停止（防止事件冲突）
+const handleRecordStop = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:271',message:'handleRecordStop被调用',data:{eventType:event.type,isRecording:isRecording.value,recordingDuration:recordingStartTime?Date.now()-recordingStartTime:null},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
+  if (isRecording.value && recordingStartTime) {
+    const recordingDuration = Date.now() - recordingStartTime
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:278',message:'检查录音时长',data:{recordingDuration,minDuration:MIN_RECORDING_DURATION},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    // 如果录音时间太短，等待到最小时长
+    if (recordingDuration < MIN_RECORDING_DURATION) {
+      const remainingTime = MIN_RECORDING_DURATION - recordingDuration
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:282',message:'录音时长太短，延迟停止',data:{recordingDuration,remainingTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+      // #endregion
+      setTimeout(() => {
+        if (isRecording.value) {
+          stopRecording(event)
+        }
+      }, remainingTime)
+      return
+    }
+    stopRecording(event)
+  }
+}
+
 // 开始录音
-const startRecording = async () => {
+const startRecording = async (event) => {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:257',message:'startRecording被调用',data:{eventType:event?.type,isRecording:isRecording.value,hasMediaRecorder:!!mediaRecorder,mediaRecorderState:mediaRecorder?.state,hasMediaStream:!!mediaStream},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
+  
+  // 防止重复触发
+  if (isRecording.value) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:261',message:'已经在录音中，忽略重复调用',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    return
+  }
+  
+  // 如果正在加载评分，不允许开始新的录音
+  if (loading.value) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:267',message:'正在加载评分，忽略录音请求',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    return
+  }
+  
   // 检查浏览器支持
   if (browserNotSupported.value) {
     alert('您的浏览器不支持录音功能')
     return
+  }
+  
+  // 清理之前的资源（如果存在）
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:275',message:'清理之前的mediaRecorder',data:{state:mediaRecorder.state},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    try {
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop()
+      }
+    } catch (e) {
+      console.error('清理mediaRecorder失败:', e)
+    }
+    mediaRecorder = null
+  }
+  
+  if (mediaStream) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:285',message:'清理之前的mediaStream',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    mediaStream.getTracks().forEach(track => track.stop())
+    mediaStream = null
   }
 
   // 如果还没有权限，先请求权限
@@ -353,14 +441,50 @@ const startRecording = async () => {
     audioChunks = []
 
     mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
+      if (event.data && event.data.size > 0) {
         audioChunks.push(event.data)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:355',message:'收到音频数据块',data:{chunkSize:event.data.size,chunksCount:audioChunks.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
       }
     }
 
     mediaRecorder.onstop = async () => {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:361',message:'MediaRecorder停止事件触发',data:{chunksCount:audioChunks.length,state:mediaRecorder.state},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      // 确保获取所有剩余数据
+      if (mediaRecorder.state !== 'inactive') {
+        mediaRecorder.requestData()
+      }
+      
       const audioType = mediaRecorder.mimeType || 'audio/webm'
       const audioBlob = new Blob(audioChunks, { type: audioType })
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:370',message:'录音停止，生成Blob',data:{audioChunksCount:audioChunks.length,audioChunksTotalSize:audioChunks.reduce((sum,chunk)=>sum+(chunk.size||0),0),audioType,blobSize:audioBlob.size,blobType:audioBlob.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      
+      // 验证音频数据有效性
+      if (audioBlob.size < 1000) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:442',message:'音频文件太小，可能录音失败',data:{blobSize:audioBlob.size,chunksCount:audioChunks.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        console.warn('录音数据过小，放弃上传:', audioBlob.size, 'bytes')
+        // 不显示alert，静默失败，让用户可以重试
+        loading.value = false
+        hasScore.value = false
+        score.value = 0
+        // 清理资源
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop())
+          mediaStream = null
+        }
+        mediaRecorder = null
+        audioChunks = []
+        return
+      }
+      
       await evaluateSpeech(audioBlob)
 
       // 清理资源
@@ -372,9 +496,17 @@ const startRecording = async () => {
       audioChunks = []
     }
 
-    mediaRecorder.start()
+    // 使用 timeslice 参数，每100ms采集一次数据，确保数据能够及时收集
+    mediaRecorder.start(100)
     isRecording.value = true
+    recordingStartTime = Date.now()
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:474',message:'录音已启动',data:{mediaRecorderState:mediaRecorder.state,mimeType:mimeType,startTime:recordingStartTime},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:404',message:'录音启动失败',data:{errorName:err.name,errorMessage:err.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     console.error('录音启动失败:', err)
 
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -403,10 +535,32 @@ const startRecording = async () => {
 }
 
 // 停止录音
-const stopRecording = () => {
+const stopRecording = (event) => {
+  const recordingDuration = recordingStartTime ? Date.now() - recordingStartTime : 0
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:488',message:'stopRecording被调用',data:{eventType:event?.type,isRecording:isRecording.value,hasMediaRecorder:!!mediaRecorder,mediaRecorderState:mediaRecorder?.state,recordingDuration},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+  // #endregion
+  
+  if (!isRecording.value) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:492',message:'当前未在录音，忽略停止请求',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    return
+  }
+  
   if (mediaRecorder && mediaRecorder.state === 'recording') {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:497',message:'停止录音',data:{state:mediaRecorder.state,recordingDuration},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     mediaRecorder.stop()
     isRecording.value = false
+    recordingStartTime = null
+  } else {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:502',message:'mediaRecorder状态异常',data:{hasMediaRecorder:!!mediaRecorder,state:mediaRecorder?.state},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
+    isRecording.value = false
+    recordingStartTime = null
   }
 }
 
@@ -442,9 +596,18 @@ onBeforeUnmount(() => {
 // 评估语音
 const evaluateSpeech = async (audioBlob) => {
   loading.value = true
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:443',message:'evaluateSpeech开始，准备调用API',data:{letter:currentLetter.value.letter,blobSize:audioBlob.size,blobType:audioBlob.type},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
   try {
     // 调用后端API评估语音
     const result = await speechAPI.evaluate(currentLetter.value.letter, audioBlob)
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:448',message:'API调用成功，收到结果',data:{score:result.score,accuracy:result.accuracy,feedback:result.feedback,resultKeys:Object.keys(result)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:449',message:'设置评分结果',data:{score:result.score,scoreType:typeof result.score},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
     score.value = result.score
     hasScore.value = true
 
@@ -479,6 +642,9 @@ const evaluateSpeech = async (audioBlob) => {
       }, 3000)
     }
   } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/8cca928c-d5b9-43d9-97e1-7898a9124d5d',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Record.vue:481',message:'evaluateSpeech失败',data:{errorMessage:err.message,errorName:err.name,errorStack:err.stack},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
     console.error('语音评分失败:', err)
     alert('评分失败，请重试')
     // 重试

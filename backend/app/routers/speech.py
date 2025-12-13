@@ -47,6 +47,9 @@ async def evaluate_speech(
 
     # 读取音频数据
     audio_content = await audio.read()
+    # #region agent log
+    import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'speech.py:49','message':'后端接收音频数据','data':{'audioSize':len(audio_content),'filename':audio.filename,'contentType':audio.content_type,'letter':letter,'audioStartBytes':audio_content[:20].hex() if len(audio_content)>=20 else audio_content.hex()},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run2','hypothesisId':'C'})+'\n')
+    # #endregion
 
     # 验证音频大小 (最大5MB)
     if len(audio_content) > 5 * 1024 * 1024:
@@ -54,6 +57,9 @@ async def evaluate_speech(
 
     # 使用语音评分服务（阿里云API或本地模拟）
     result = await evaluate_speech_service(audio_content, letter)
+    # #region agent log
+    import json; open('/Users/linshengqin/Documents/Code/kidsEnglish/.cursor/debug.log','a').write(json.dumps({'location':'speech.py:56','message':'evaluate_speech_service返回结果','data':{'resultKeys':list(result.keys()) if isinstance(result,dict) else 'not_dict','score':result.get('score') if isinstance(result,dict) else None},'timestamp':int(__import__('time').time()*1000),'sessionId':'debug-session','runId':'run1','hypothesisId':'E'})+'\n')
+    # #endregion
 
     return SpeechEvalResponse(
         score=result["score"],

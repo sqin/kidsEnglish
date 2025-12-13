@@ -52,12 +52,12 @@
         class="action-btn record-btn" 
         :class="{ recording: isRecording, loading: loading }"
         :disabled="loading || browserNotSupported"
-        @mousedown="startRecording"
-        @mouseup="stopRecording"
-        @mouseleave="stopRecording"
-        @touchstart.prevent="startRecording"
-        @touchend.prevent="stopRecording"
-        @touchcancel.prevent="stopRecording"
+        @mousedown.prevent="handleRecordStart"
+        @mouseup.prevent="handleRecordStop"
+        @mouseleave.prevent="handleRecordStop"
+        @touchstart.prevent="handleRecordStart"
+        @touchend.prevent="handleRecordStop"
+        @touchcancel.prevent="handleRecordStop"
       >
         <span class="btn-icon" v-if="!isRecording && !hasScore && !loading">🎤</span>
         <span class="btn-icon pulse" v-else-if="isRecording">🔴</span>
@@ -124,10 +124,19 @@
         <!-- 隐藏的音频元素用于回放 -->
         <audio 
           ref="audioPlayer" 
-          :src="recordedAudioUrl" 
           @ended="isPlaying = false"
+          @error="handleAudioError"
           style="display: none;"
-        ></audio>
+        >
+          <source v-if="recordedAudioUrl" :src="recordedAudioUrl" type="audio/webm">
+          <source v-if="recordedAudioUrl" :src="recordedAudioUrl" type="audio/mpeg">
+          <source v-if="recordedAudioUrl" :src="recordedAudioUrl" type="audio/wav">
+          您的浏览器不支持音频播放
+          <source :src="recordedAudioUrl" type="audio/webm">
+          <source :src="recordedAudioUrl" type="audio/mpeg">
+          <source :src="recordedAudioUrl" type="audio/wav">
+          您的浏览器不支持音频播放
+        </audio>
       </div>
 
       <!-- 阶段提示（紧凑版） -->
@@ -175,6 +184,9 @@ const isPlaying = ref(false)
 let mediaRecorder = null
 let audioChunks = []
 let mediaStream = null
+let recordingStartTime = null
+let isStartingRecording = false // 标记是否正在启动录音
+const MIN_RECORDING_DURATION = 500 // 最小录音时长500毫秒
 
 const currentLetter = computed(() => {
   const letter = route.params.letter.toUpperCase()
@@ -312,11 +324,77 @@ const requestMicrophonePermission = async () => {
   return await checkMicrophonePermission()
 }
 
+// 处理录音开始（防止事件冲突）
+const handleRecordStart = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  if (!isRecording.value && !loading.value) {
+    startRecording(event)
+  }
+}
+
+// 处理录音停止（防止事件冲突）
+const handleRecordStop = (event) => {
+  event.preventDefault()
+  event.stopPropagation()
+  
+  // 如果正在启动录音，取消启动
+  if (isStartingRecording) {
+    isStartingRecording = false
+    return
+  }
+  
+  if (isRecording.value && recordingStartTime) {
+    const recordingDuration = Date.now() - recordingStartTime
+    // 如果录音时间太短，等待到最小时长
+    if (recordingDuration < MIN_RECORDING_DURATION) {
+      const remainingTime = MIN_RECORDING_DURATION - recordingDuration
+      setTimeout(() => {
+        if (isRecording.value) {
+          stopRecording(event)
+        }
+      }, remainingTime)
+      return
+    }
+    stopRecording(event)
+  }
+}
+
 // 开始录音
-const startRecording = async () => {
+const startRecording = async (event) => {
+  // 防止重复触发
+  if (isRecording.value || isStartingRecording) {
+    return
+  }
+  
+  // 如果正在加载评分，不允许开始新的录音
+  if (loading.value) {
+    return
+  }
+  
   if (browserNotSupported.value) {
     alert('您的浏览器不支持录音功能')
     return
+  }
+  
+  // 标记正在启动录音
+  isStartingRecording = true
+  
+  // 清理之前的资源（如果存在）
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try {
+      if (mediaRecorder.state === 'recording') {
+        mediaRecorder.stop()
+      }
+    } catch (e) {
+      console.error('清理mediaRecorder失败:', e)
+    }
+    mediaRecorder = null
+  }
+  
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop())
+    mediaStream = null
   }
 
   if (!hasPermission.value && !permissionRequested.value) {
@@ -406,21 +484,56 @@ const startRecording = async () => {
     }
 
     mediaRecorder.onstop = async () => {
-      const audioType = mediaRecorder.mimeType || 'audio/webm'
-      const audioBlob = new Blob(audioChunks, { type: audioType })
+      // 立即设置isRecording为false和loading为true，防止在清理过程中触发新的录音
+      isRecording.value = false
+      recordingStartTime = null
+      loading.value = true // 立即设置loading，防止新录音在评估期间开始
+      
+      // 保存当前实例的引用，确保清理的是正确的实例
+      const currentMediaRecorder = mediaRecorder
+      const currentMediaStream = mediaStream
+      const currentAudioChunks = [...audioChunks]
+      
+      const audioType = currentMediaRecorder.mimeType || 'audio/webm'
+      const audioBlob = new Blob(currentAudioChunks, { type: audioType })
+      
+      // evaluateSpeech内部也会设置loading，但我们已经提前设置了，确保一致性
       await evaluateSpeech(audioBlob)
 
+      // 只清理当前实例，如果已经被新的录音替换，则不清理
+      if (mediaStream === currentMediaStream && currentMediaStream) {
+        currentMediaStream.getTracks().forEach(track => track.stop())
+        if (mediaStream === currentMediaStream) {
+          mediaStream = null
+        }
+      }
+      
+      if (mediaRecorder === currentMediaRecorder) {
+        mediaRecorder = null
+      }
+      
+      // 清理audioChunks，但只在没有新录音开始的情况下
+      if (!isRecording.value && !isStartingRecording) {
+        audioChunks = []
+      }
+    }
+
+    // 检查是否在启动过程中被取消
+    if (!isStartingRecording) {
       if (mediaStream) {
         mediaStream.getTracks().forEach(track => track.stop())
         mediaStream = null
       }
-      mediaRecorder = null
-      audioChunks = []
+      return
     }
-
-    mediaRecorder.start()
+    
+    // 使用 timeslice 参数，每100ms采集一次数据，确保数据能够及时收集
+    mediaRecorder.start(100)
     isRecording.value = true
+    isStartingRecording = false // 清除启动标志
+    recordingStartTime = Date.now()
   } catch (err) {
+    isStartingRecording = false // 清除启动标志
     console.error('录音启动失败:', err)
 
     if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -443,14 +556,26 @@ const startRecording = async () => {
       mediaStream.getTracks().forEach(track => track.stop())
       mediaStream = null
     }
+    isStartingRecording = false // 清除启动标志
   }
 }
 
 // 停止录音
-const stopRecording = () => {
+const stopRecording = (event) => {
+  // 清除启动标志
+  isStartingRecording = false
+  
+  if (!isRecording.value) {
+    return
+  }
+  
   if (mediaRecorder && mediaRecorder.state === 'recording') {
     mediaRecorder.stop()
     isRecording.value = false
+    recordingStartTime = null
+  } else {
+    isRecording.value = false
+    recordingStartTime = null
   }
 }
 
@@ -530,6 +655,15 @@ const retry = () => {
   }
 }
 
+// 处理音频错误
+const handleAudioError = (e) => {
+  console.error('音频加载错误:', e.target.error)
+  isPlaying.value = false
+  if (e.target.error && (e.target.error.code === 4 || e.target.error.message?.includes('NotSupportedError'))) {
+    alert('当前浏览器不支持该音频格式，请使用Chrome、Firefox或Edge浏览器')
+  }
+}
+
 // 切换回放
 const togglePlayback = () => {
   if (!audioPlayer.value || !recordedAudioUrl.value) return
@@ -553,9 +687,22 @@ const togglePlayback = () => {
       audioPlayer.value.src = audioUrl
     }
     
+    // 添加错误处理
+    audioPlayer.value.onerror = (e) => {
+      console.error('音频播放错误:', e.target.error)
+      isPlaying.value = false
+      // 如果是格式不支持错误，提示用户
+      if (e.target.error && (e.target.error.code === 4 || e.target.error.message?.includes('NotSupportedError'))) {
+        alert('当前浏览器不支持该音频格式，请使用Chrome、Firefox或Edge浏览器')
+      }
+    }
+    
     audioPlayer.value.play().catch(err => {
       console.error('播放失败:', err)
       isPlaying.value = false
+      if (err.name === 'NotSupportedError') {
+        alert('当前浏览器不支持该音频格式，请使用Chrome、Firefox或Edge浏览器')
+      }
     })
     isPlaying.value = true
   }

@@ -117,21 +117,21 @@ async def save_recording(
     filename = f"{current_user.id}_{letter}_{timestamp}.{file_ext}"
     file_path = UPLOAD_DIR / filename
 
-    # 如果已存在记录，删除旧文件
-    if existing_recording:
-        old_file_path = Path(existing_recording.file_path)
-        if old_file_path.exists():
-            try:
-                old_file_path.unlink()
-            except Exception:
-                pass  # 忽略删除旧文件时的错误
-
-    # 保存文件
+    # 保存新文件（先保存，成功后再删除旧文件，避免新文件保存失败时丢失旧文件）
     try:
         with open(file_path, "wb") as f:
             f.write(audio_content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
+
+    # 新文件保存成功后，删除旧文件
+    if existing_recording:
+        old_file_path = Path(existing_recording.file_path)
+        if old_file_path.exists() and old_file_path != file_path:  # 确保不是同一个文件
+            try:
+                old_file_path.unlink()
+            except Exception:
+                pass  # 忽略删除旧文件时的错误
 
     # 生成文件URL（相对路径，前端需要配置正确的baseURL）
     file_url = f"/api/speech/audio/{filename}"

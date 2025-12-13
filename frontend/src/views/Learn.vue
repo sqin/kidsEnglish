@@ -54,10 +54,8 @@
         :disabled="loading || browserNotSupported"
         @mousedown.prevent="handleRecordStart"
         @mouseup.prevent="handleRecordStop"
-        @mouseleave.prevent="handleRecordStop"
         @touchstart.prevent="handleRecordStart"
         @touchend.prevent="handleRecordStop"
-        @touchcancel.prevent="handleRecordStop"
       >
         <span class="btn-icon" v-if="!isRecording && !hasScore && !loading">🎤</span>
         <span class="btn-icon pulse" v-else-if="isRecording">🔴</span>
@@ -186,6 +184,7 @@ let audioChunks = []
 let mediaStream = null
 let recordingStartTime = null
 let isStartingRecording = false // 标记是否正在启动录音
+let delayedStopTimeout = null // 延迟停止的timeout ID
 const MIN_RECORDING_DURATION = 500 // 最小录音时长500毫秒
 
 const currentLetter = computed(() => {
@@ -328,6 +327,13 @@ const requestMicrophonePermission = async () => {
 const handleRecordStart = (event) => {
   event.preventDefault()
   event.stopPropagation()
+  
+  // 如果有一个延迟停止的timeout，取消它（用户再次按下，说明要继续录音）
+  if (delayedStopTimeout !== null) {
+    clearTimeout(delayedStopTimeout)
+    delayedStopTimeout = null
+  }
+  
   if (!isRecording.value && !loading.value) {
     startRecording(event)
   }
@@ -346,10 +352,52 @@ const handleRecordStop = (event) => {
   
   if (isRecording.value && recordingStartTime) {
     const recordingDuration = Date.now() - recordingStartTime
-    // 如果录音时间太短，等待到最小时长
+    // 如果录音时间太短，判断是误触还是需要延迟停止
     if (recordingDuration < MIN_RECORDING_DURATION) {
+      // 如果录音时间极短（<100ms），认为是误触，直接取消录音
+      if (recordingDuration < 100) {
+        // 取消之前的延迟停止（如果有）
+        if (delayedStopTimeout !== null) {
+          clearTimeout(delayedStopTimeout)
+          delayedStopTimeout = null
+        }
+        // 直接停止并清理，不进行评分
+        // 注意：不要调用stop()，因为这会触发onstop事件，导致loading状态混乱
+        // 直接清理资源即可
+        isRecording.value = false
+        recordingStartTime = null
+        loading.value = false  // 确保loading被重置
+        // 清理资源
+        if (mediaStream) {
+          mediaStream.getTracks().forEach(track => track.stop())
+          mediaStream = null
+        }
+        if (mediaRecorder) {
+          // 如果recorder正在录音，直接停止track，不调用stop()避免触发onstop
+          try {
+            if (mediaRecorder.state === 'recording') {
+              // 停止stream的track来终止录音，但不触发onstop事件
+              if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop())
+              }
+            }
+          } catch (e) {
+            console.error('停止录音失败:', e)
+          }
+        }
+        mediaRecorder = null
+        audioChunks = []
+        return
+      }
+      // 如果录音时间在100-500ms之间，延迟停止
       const remainingTime = MIN_RECORDING_DURATION - recordingDuration
-      setTimeout(() => {
+      // 取消之前的延迟停止（如果有）
+      if (delayedStopTimeout !== null) {
+        clearTimeout(delayedStopTimeout)
+      }
+      // 设置新的延迟停止
+      delayedStopTimeout = setTimeout(() => {
+        delayedStopTimeout = null
         if (isRecording.value) {
           stopRecording(event)
         }
@@ -494,11 +542,35 @@ const startRecording = async (event) => {
       const currentMediaStream = mediaStream
       const currentAudioChunks = [...audioChunks]
       
-      const audioType = currentMediaRecorder.mimeType || 'audio/webm'
-      const audioBlob = new Blob(currentAudioChunks, { type: audioType })
-      
-      // evaluateSpeech内部也会设置loading，但我们已经提前设置了，确保一致性
-      await evaluateSpeech(audioBlob)
+      try {
+        const audioType = currentMediaRecorder ? (currentMediaRecorder.mimeType || 'audio/webm') : 'audio/webm'
+        const audioBlob = new Blob(currentAudioChunks, { type: audioType })
+        
+        // 检查音频大小，如果太小（可能是误触或录音失败），静默失败
+        if (audioBlob.size < 1000) {
+          loading.value = false
+          // 清理资源
+          if (mediaStream === currentMediaStream && currentMediaStream) {
+            currentMediaStream.getTracks().forEach(track => track.stop())
+            if (mediaStream === currentMediaStream) {
+              mediaStream = null
+            }
+          }
+          if (mediaRecorder === currentMediaRecorder) {
+            mediaRecorder = null
+          }
+          if (!isRecording.value && !isStartingRecording) {
+            audioChunks = []
+          }
+          return
+        }
+        
+        // evaluateSpeech内部也会设置loading，但我们已经提前设置了，确保一致性
+        await evaluateSpeech(audioBlob)
+      } catch (error) {
+        console.error('录音处理错误:', error)
+        loading.value = false  // 确保在错误情况下也重置loading
+      }
 
       // 只清理当前实例，如果已经被新的录音替换，则不清理
       if (mediaStream === currentMediaStream && currentMediaStream) {
@@ -562,8 +634,12 @@ const startRecording = async (event) => {
 
 // 停止录音
 const stopRecording = (event) => {
-  // 清除启动标志
+  // 清除启动标志和延迟停止timeout
   isStartingRecording = false
+  if (delayedStopTimeout !== null) {
+    clearTimeout(delayedStopTimeout)
+    delayedStopTimeout = null
+  }
   
   if (!isRecording.value) {
     return

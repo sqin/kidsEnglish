@@ -41,12 +41,11 @@
     <div class="action-buttons">
       <!-- Back按钮 -->
       <a 
-        class="action-btn back-nav-btn" 
+        class="nav-btn back-nav-btn" 
         :href="`/learn/${prevLetter}`"
         @click.prevent="goBack"
       >
-        <span class="btn-icon">←</span>
-        <span>Back</span>
+        <span class="nav-icon">←</span>
       </a>
       <!-- 跟读练习 -->
       <button 
@@ -71,12 +70,11 @@
       </button>
       <!-- Next按钮 -->
       <a 
-        class="action-btn next-btn" 
+        class="nav-btn next-btn" 
         :href="`/learn/${nextLetter}`"
         @click.prevent="goNext"
       >
-        <span class="btn-icon">→</span>
-        <span>Next</span>
+        <span class="nav-icon">→</span>
       </a>
     </div>
 
@@ -117,7 +115,7 @@
         <div class="action-btns">
           <button class="retry-btn" @click="retry">再试一次</button>
           <button class="playback-btn" @click="togglePlayback" v-if="recordedAudioUrl">
-            {{ isPlaying ? '⏸️ 暂停' : '▶️ 回放' }}
+            {{ isPlaying ? '⏸️' : '▶️' }}
           </button>
           <button class="next-btn" @click="goNext" v-if="score >= 1">
             下一个 →
@@ -621,13 +619,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .learn-page {
   min-height: 100vh;
-  max-height: 100vh;
+  height: 100vh;
   overflow-y: auto;
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  padding: 10px 20px 20px;
+  padding: 10px 15px 15px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  box-sizing: border-box;
 }
 
 .top-bar {
@@ -635,7 +634,8 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 
 .back-btn {
@@ -650,11 +650,14 @@ onBeforeUnmount(() => {
 
 .main-content {
   width: 100%;
-  max-width: 600px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 5px 0;
+  overflow-y: auto;
 }
 
 .letter-word-group {
@@ -663,30 +666,36 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 15px;
   width: 100%;
+  flex-shrink: 0;
 }
 
 .letter-display {
   background: white;
-  border-radius: 25px;
-  padding: 25px 40px;
+  border-radius: 20px;
+  padding: 32px 24px;
   text-align: center;
   box-shadow: 0 8px 30px rgba(0,0,0,0.15);
   cursor: pointer;
   width: 100%;
-  max-width: 300px;
+  max-width: 224px;
+  aspect-ratio: 2 / 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .big-letter {
-  font-size: 80px;
+  font-size: 100px;
   font-weight: bold;
   color: #333;
   line-height: 1;
 }
 
 .small-letter {
-  font-size: 50px;
+  font-size: 60px;
   color: #666;
-  margin-top: 5px;
+  margin-top: 8px;
 }
 
 .word-section {
@@ -695,29 +704,56 @@ onBeforeUnmount(() => {
   justify-content: center;
   gap: 12px;
   background: rgba(255,255,255,0.9);
-  padding: 12px 25px;
-  border-radius: 15px;
+  padding: 15px 25px;
+  border-radius: 18px;
   cursor: pointer;
   width: 100%;
-  max-width: 300px;
+  max-width: 350px;
+  flex-shrink: 0;
 }
 
 .word-image {
-  font-size: 36px;
+  font-size: 42px;
 }
 
 .word-text {
-  font-size: 24px;
+  font-size: 28px;
   font-weight: bold;
   color: #333;
 }
 
 .action-buttons {
   display: flex;
-  gap: 15px;
+  gap: 12px;
   width: 100%;
   max-width: 400px;
   justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 15px 20px;
+  border: none;
+  border-radius: 15px;
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  text-decoration: none;
+  min-width: 50px;
+  width: 50px;
+  height: 50px;
+}
+
+.nav-icon {
+  font-size: 28px;
+  font-weight: bold;
+  line-height: 1;
 }
 
 .action-btn {
@@ -732,8 +768,8 @@ onBeforeUnmount(() => {
   cursor: pointer;
   transition: transform 0.2s;
   flex: 1;
-  min-width: 100px;
-  max-width: 180px;
+  min-width: 120px;
+  max-width: 200px;
 }
 
 .action-btn:active {
@@ -760,16 +796,8 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
-.back-nav-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  text-decoration: none;
-}
-
-.next-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  text-decoration: none;
+.nav-btn:active {
+  transform: scale(0.95);
 }
 
 .btn-icon {
@@ -822,26 +850,28 @@ onBeforeUnmount(() => {
 
 .stage-hint {
   color: white;
-  font-size: 16px;
+  font-size: 14px;
   text-align: center;
-  padding: 10px 20px;
+  padding: 8px 16px;
   background: rgba(255,255,255,0.2);
-  border-radius: 12px;
+  border-radius: 10px;
   width: 100%;
   max-width: 400px;
+  flex-shrink: 0;
 }
 
 .record-hint {
   text-align: center;
   color: white;
-  font-size: 15px;
+  font-size: 14px;
   width: 100%;
   max-width: 400px;
+  flex-shrink: 0;
 }
 
 .record-hint p {
   margin: 0;
-  padding: 8px 16px;
+  padding: 6px 14px;
   background: rgba(255,255,255,0.2);
   border-radius: 10px;
 }
@@ -857,23 +887,24 @@ onBeforeUnmount(() => {
 
 .score-result {
   background: white;
-  border-radius: 25px;
-  padding: 20px 30px;
+  border-radius: 20px;
+  padding: 15px 20px;
   text-align: center;
   box-shadow: 0 8px 30px rgba(0,0,0,0.15);
   width: 100%;
   max-width: 400px;
+  flex-shrink: 0;
 }
 
 .score-stars {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  margin-bottom: 15px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
 .star {
-  font-size: 40px;
+  font-size: 32px;
   filter: grayscale(100%);
   transition: filter 0.3s, transform 0.3s;
 }
@@ -890,27 +921,33 @@ onBeforeUnmount(() => {
 }
 
 .score-text {
-  font-size: 18px;
+  font-size: 16px;
   color: #333;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
+  line-height: 1.3;
 }
 
 .action-btns {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
 }
 
 .retry-btn, .playback-btn, .action-btns .next-btn {
-  padding: 12px 20px;
+  padding: 10px 16px;
   border: none;
-  border-radius: 12px;
-  font-size: 16px;
+  border-radius: 10px;
+  font-size: 14px;
   cursor: pointer;
   transition: transform 0.2s;
   flex: 1;
-  min-width: 100px;
+  min-width: 80px;
+}
+
+.playback-btn {
+  min-width: 50px;
+  flex: 0 0 auto;
 }
 
 .retry-btn {

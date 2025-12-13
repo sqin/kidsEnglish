@@ -69,3 +69,16 @@ class CheckinResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Recording schemas
+class RecordingResponse(BaseModel):
+    id: int
+    letter_id: int
+    letter: str
+    file_url: str
+    score: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

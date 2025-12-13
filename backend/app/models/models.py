@@ -16,6 +16,7 @@ class User(Base):
     progress = relationship("Progress", back_populates="user")
     checkins = relationship("Checkin", back_populates="user")
     achievements = relationship("Achievement", back_populates="user")
+    recordings = relationship("Recording", back_populates="user")
 
 
 class Progress(Base):
@@ -53,3 +54,18 @@ class Achievement(Base):
     unlocked_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="achievements")
+
+
+class Recording(Base):
+    __tablename__ = "recordings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    letter_id = Column(Integer, index=True)  # 1-26 对应 A-Z
+    letter = Column(String(1))  # 字母 A-Z
+    file_path = Column(String(500))  # 音频文件路径
+    file_url = Column(String(500))  # 音频文件URL
+    score = Column(Integer, default=0)  # 评分 0-3
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="recordings")

@@ -1,9 +1,12 @@
+import os
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.database import get_db
-from app.models.models import User
-from app.schemas.schemas import SpeechEvalResponse
+from app.models.models import User, Recording
+from app.schemas.schemas import SpeechEvalResponse, RecordingResponse
 from app.routers.auth import get_current_user
 from app.config import get_settings
 from app.services.aliyun_speech import evaluate_speech as evaluate_speech_service
@@ -11,6 +14,10 @@ from app.services.aliyun_speech import evaluate_speech as evaluate_speech_servic
 router = APIRouter(prefix="/speech", tags=["语音评分"])
 
 settings = get_settings()
+
+# 确保上传目录存在
+UPLOAD_DIR = Path("uploads/audio")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/evaluate", response_model=SpeechEvalResponse)
@@ -52,6 +59,112 @@ async def evaluate_speech(
         score=result["score"],
         accuracy=result["accuracy"],
         feedback=result["feedback"]
+    )
+
+
+@router.post("/save", response_model=RecordingResponse)
+async def save_recording(
+    letter: str = Form(...),
+    audio: UploadFile = File(...),
+    score: int = Form(0),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    保存用户录音
+
+    参数:
+    - letter: 目标字母 (A-Z)
+    - audio: 音频文件
+    - score: 评分 (0-3)
+
+    返回:
+    - 录音记录信息
+    """
+    # 验证字母
+    if len(letter) != 1 or not letter.isalpha():
+        raise HTTPException(status_code=400, detail="请提供单个字母")
+
+    letter = letter.upper()
+
+    # 验证评分
+    if score < 0 or score > 3:
+        raise HTTPException(status_code=400, detail="评分必须在0-3之间")
+
+    # 读取音频数据
+    audio_content = await audio.read()
+
+    # 验证音频大小 (最大5MB)
+    if len(audio_content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="音频文件过大")
+
+    # 生成文件名：用户ID_字母_时间戳.扩展名
+    file_ext = audio.filename.split('.')[-1] if '.' in audio.filename else 'webm'
+    from datetime import datetime
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f"{current_user.id}_{letter}_{timestamp}.{file_ext}"
+    file_path = UPLOAD_DIR / filename
+
+    # 保存文件
+    try:
+        with open(file_path, "wb") as f:
+            f.write(audio_content)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"保存文件失败: {str(e)}")
+
+    # 获取字母ID
+    letter_id = ord(letter) - ord('A') + 1
+
+    # 生成文件URL（相对路径，前端需要配置正确的baseURL）
+    file_url = f"/api/speech/audio/{filename}"
+
+    # 保存到数据库
+    recording = Recording(
+        user_id=current_user.id,
+        letter_id=letter_id,
+        letter=letter,
+        file_path=str(file_path),
+        file_url=file_url,
+        score=score
+    )
+    db.add(recording)
+    await db.commit()
+    await db.refresh(recording)
+
+    return RecordingResponse(
+        id=recording.id,
+        letter_id=recording.letter_id,
+        letter=recording.letter,
+        file_url=recording.file_url,
+        score=recording.score,
+        created_at=recording.created_at
+    )
+
+
+@router.get("/audio/{filename}")
+async def get_audio_file(filename: str):
+    """
+    获取音频文件
+    """
+    file_path = UPLOAD_DIR / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="文件不存在")
+
+    # 根据文件扩展名确定媒体类型
+    ext = filename.split('.')[-1].lower()
+    media_types = {
+        'webm': 'audio/webm',
+        'mp3': 'audio/mpeg',
+        'mp4': 'audio/mp4',
+        'wav': 'audio/wav',
+        'ogg': 'audio/ogg'
+    }
+    media_type = media_types.get(ext, 'audio/webm')
+
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        path=str(file_path),
+        media_type=media_type
     )
 
 
